@@ -1,0 +1,22 @@
+{
+  "uploaded_images": {
+    "dbe76540806c4edb97ac1a9c": {
+      "id": "dbe76540806c4edb97ac1a9c",
+      "original_path": "C:\\Users\\Abhishek  Yadav\\OneDrive\\Desktop\\imgsheet\\backend\\app\\uploads\\dbe76540806c4edb97ac1a9c_original.jpg",
+      "original_url": "http://localhost:10000/uploads/dbe76540806c4edb97ac1a9c_original.jpg",
+      "filename": "duman-photography-GvvtE31b0JI-unsplash.jpg",
+      "uploaded_at": "2026-04-06T01:25:11.984555",
+      "processed_path": "C:\\Users\\Abhishek  Yadav\\OneDrive\\Desktop\\imgsheet\\backend\\app\\processed\\dbe76540806c4edb97ac1a9c_final.png",
+      "processed_url": "http://localhost:10000/processed/dbe76540806c4edb97ac1a9c_final.png",
+      "processing_time": 8.158041000366211
+    }
+  },
+  "processing_status": {
+    "dbe76540806c4edb97ac1a9c": {
+      "status": "completed",
+      "progress": 100,
+      "processed_url": "http://localhost:10000/processed/dbe76540806c4edb97ac1a9c_final.png",
+      "processing_time": "8.16s"
+    }
+  }
+}

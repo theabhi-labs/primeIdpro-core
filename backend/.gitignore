@@ -1,0 +1,12 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+.env
+venv/
+# Logs
+*.log
+
+# Optional: temp files
+*.sqlite3
+*.db

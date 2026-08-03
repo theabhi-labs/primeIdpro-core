@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_name }} - {{ site_description }}</title>
+    <meta name="description" content="{{ site_description }}">
+    <meta name="keywords" content="passport photo, background remover, photo enhancer">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="{{ site_name }}">
+    <meta property="og:description" content="{{ site_description }}">
+    <meta property="og:url" content="{{ site_url }}">
+    <meta property="og:type" content="website">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ site_name }}">
+    <meta name="twitter:description" content="{{ site_description }}">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="{{ site_url }}">
+    
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "{{ site_name }}",
+        "description": "{{ site_description }}",
+        "url": "{{ site_url }}",
+        "applicationCategory": "Photo Editor",
+        "operatingSystem": "Web",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+</head>
+<body>
+    <h1>{{ site_name }} - Passport Size Photo Generator</h1>
+    <p>Create professional passport photos with AI face detection and background removal</p>
+    
+    <div class="upload-area">
+        <input type="file" id="imageUpload" accept="image/*" multiple>
+        <button onclick="uploadImages()">Upload Photos</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function uploadImages() {
+            const files = document.getElementById('imageUpload').files;
+            const formData = new FormData();
+            
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            
+            const response = await fetch('/api/v1/upload/batch', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+        }
+    </script>
+</body>
+</html>

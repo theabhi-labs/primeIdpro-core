@@ -1,0 +1,49 @@
+{
+  "name": "imgsheet-desktop",
+  "version": "1.0.0",
+  "description": "ImgSheet Desktop Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.yourcompany.imgsheet",
+    "productName": "ImgSheet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "!node_modules/.cache"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/build",
+        "to": "frontend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../backend/dist/myapp-backend.exe",
+        "to": "backend/myapp-backend.exe"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ImgSheet"
+    }
+  }
+}
