@@ -77,10 +77,13 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
       // actual saved/print-ready file (processed_url) matches what the
       // user sees — not just this local canvas preview. This is a fast
       // recolor call (no face-detection rerun).
-      if (replaceBg && photo?.id) {
+      if (replaceBg && (photo?.serverId || photo?.id)) {
+        const targetId = photo.serverId || photo.id;
         const form = new FormData();
         form.append('bg_color', bgReplaceColor);
-        await api.post(`/process/recolor/${photo.id}`, form);
+        console.log("bgReplaceColor:", bgReplaceColor);
+        console.log("FormData:", [...form.entries()]);
+        await api.post(`/process/recolor/${targetId}`, form);
       }
 
       const img = imgRef.current;

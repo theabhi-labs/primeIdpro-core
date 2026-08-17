@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import asyncio
 import logging
@@ -223,6 +224,77 @@ def hex_to_rgb(hex_color: str):
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 
+def validate_and_normalize_color(color_str: str) -> str:
+    """Validate color format safely and normalize optionally missing hash symbol."""
+    if not color_str:
+        raise HTTPException(400, "bg_color cannot be empty")
+    
+    color_str = color_str.strip()
+    
+    # Check basic colors
+    basic_colors = {"white", "black", "red", "green", "blue"}
+    if color_str.lower() in basic_colors:
+        return color_str.lower()
+        
+    # Hex validation pattern (optional '#' followed by 3 or 6 hex digits)
+    match = re.match(r"^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$", color_str)
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid color format: '{color_str}'. Must be a valid hex color code (e.g., #3498DB or 3498DB) or basic color name."
+        )
+        
+    if not color_str.startswith("#"):
+        color_str = f"#{color_str}"
+        
+    return color_str
+
+
+def calculate_passport_crop(
+    image_width: int,
+    image_height: int,
+    rotated_landmarks: list,
+    target_aspect_ratio: float,
+    eye_line_ratio: float,
+    face_width_ratio: float,
+    top_margin_ratio: float,
+    bottom_margin_ratio: float
+):
+    """Calculate normalized crop coordinates based on horizontal-aligned landmarks and config ratios."""
+    p_left_cheek = rotated_landmarks[454]
+    p_right_cheek = rotated_landmarks[234]
+    p_chin = rotated_landmarks[152]
+    p_forehead = rotated_landmarks[10]
+    
+    num_landmarks = len(rotated_landmarks)
+    p_left_eye = rotated_landmarks[473] if num_landmarks >= 478 else rotated_landmarks[263]
+    p_right_eye = rotated_landmarks[468] if num_landmarks >= 478 else rotated_landmarks[33]
+    
+    # Measure face width in pixels
+    face_width = abs(p_left_cheek[0] - p_right_cheek[0])
+    face_center_x = (p_left_cheek[0] + p_right_cheek[0]) / 2.0
+    
+    # Calculate eye line mid-point
+    eye_mid_y = (p_left_eye[1] + p_right_eye[1]) / 2.0
+    
+    # Determine the target crop sizing
+    crop_width = face_width / face_width_ratio
+    crop_height = crop_width / target_aspect_ratio
+    
+    # Define crop bounding box
+    x1 = face_center_x - crop_width / 2.0
+    x2 = x1 + crop_width
+    y1 = eye_mid_y - crop_height * eye_line_ratio
+    y2 = y1 + crop_height
+    
+    logger.info(
+        f"[NORMALIZATION] face_width={face_width:.1f}, "
+        f"eye_mid_y={eye_mid_y:.1f}, chin_y={p_chin[1]:.1f}, "
+        f"crop_box=({x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f})"
+    )
+    return x1, y1, x2, y2
+
+
 def get_bg_rgb(color_str: str):
     """Convert string/hex to RGB tuple. Supports 'white', 'black', '#3498DB', basic colors."""
     color_str = (color_str or "white").strip().lower()
@@ -364,6 +436,17 @@ def remove_background_lightweight(input_path: str, output_path: str) -> bool:
 
 # ========== COUNTRY PRESETS & CROP ENGINE ==========
 
+PASSPORT_CONFIG = {
+    "width_mm": 35,
+    "height_mm": 45,
+    "dpi": 300,
+    "eye_line_ratio": 0.42,
+    "face_width_ratio": 0.55,
+    "top_margin_ratio": 0.08,
+    "bottom_margin_ratio": 0.08,
+    "shoulder_ratio": 0.85,
+}
+
 COUNTRY_PRESETS = {
     "india": {
         "name": "India",
@@ -375,6 +458,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "white",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "usa": {
         "name": "USA",
@@ -386,6 +471,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.69,
         "bg_color": "white",
         "min_dpi": 300,
+        "face_width_ratio": 0.48,
+        "eye_line_ratio": 0.375,
     },
     "uk": {
         "name": "United Kingdom",
@@ -397,6 +484,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "light grey",
         "min_dpi": 300,
+        "face_width_ratio": 0.55,
+        "eye_line_ratio": 0.425,
     },
     "canada": {
         "name": "Canada",
@@ -408,6 +497,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "white",
         "min_dpi": 300,
+        "face_width_ratio": 0.40,
+        "eye_line_ratio": 0.450,
     },
     "australia": {
         "name": "Australia",
@@ -419,6 +510,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "light grey",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "germany": {
         "name": "Germany",
@@ -430,6 +523,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "light grey",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "france": {
         "name": "France",
@@ -441,6 +536,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "light grey",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "new_zealand": {
         "name": "New Zealand",
@@ -452,6 +549,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "light grey",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "singapore": {
         "name": "Singapore",
@@ -463,6 +562,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "white",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     },
     "uae": {
         "name": "UAE",
@@ -474,6 +575,8 @@ COUNTRY_PRESETS = {
         "eye_level_ratio_max": 0.60,
         "bg_color": "white",
         "min_dpi": 300,
+        "face_width_ratio": 0.58,
+        "eye_line_ratio": 0.425,
     }
 }
 
@@ -485,31 +588,46 @@ def align_and_crop_face(rgba_img: Image.Image, country_code: str, dpi: int = 300
     and applies padding.
     """
     img_np = np.array(rgba_img)
-    if img_np.shape[2] == 4:
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
-        alpha = img_np[:, :, 3]
-    else:
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        alpha = np.ones(img_np.shape[:2], dtype=np.uint8) * 255
-        
-    h, w = img_bgr.shape[:2]
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    h, w = img_np.shape[:2]
     
     face_mesh = getattr(app.state, "mp_face_mesh", None)
     if face_mesh is None:
         logger.warning("FaceMesh not initialized, falling back to Haar Cascade")
         return align_crop_cascade_fallback(img_np, country_code, dpi)
         
+    img_rgb = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB) if img_np.shape[2] == 4 else cv2.cvtColor(img_np, cv2.COLOR_RGB2RGB)
     results = face_mesh.process(img_rgb)
     
     if not results.multi_face_landmarks:
         logger.warning("No face landmarks detected, falling back to Haar Cascade")
         return align_crop_cascade_fallback(img_np, country_code, dpi)
         
+    # Multi-face selection logic (largest face closest to the image center)
     if len(results.multi_face_landmarks) > 1:
-        raise ValueError("Multiple faces detected. Please ensure only one person is in the photo.")
+        best_face = None
+        best_score = -1
+        best_idx = 0
+        for idx, face in enumerate(results.multi_face_landmarks):
+            xs = [lm.x for lm in face.landmark]
+            ys = [lm.y for lm in face.landmark]
+            face_w = max(xs) - min(xs)
+            face_h = max(ys) - min(ys)
+            area = face_w * face_h
+            
+            cx = (min(xs) + max(xs)) / 2.0
+            cy = (min(ys) + max(ys)) / 2.0
+            dist = math.sqrt((cx - 0.5)**2 + (cy - 0.5)**2)
+            
+            score = area / (dist + 0.1)
+            if score > best_score:
+                best_score = score
+                best_face = face
+                best_idx = idx
+        logger.info(f"Selected face index {best_idx} from {len(results.multi_face_landmarks)} detected faces (score={best_score:.3f})")
+        face_landmarks = best_face
+    else:
+        face_landmarks = results.multi_face_landmarks[0]
         
-    face_landmarks = results.multi_face_landmarks[0]
     num_landmarks = len(face_landmarks.landmark)
     
     # 1. Get eye centers
@@ -532,9 +650,6 @@ def align_and_crop_face(rgba_img: Image.Image, country_code: str, dpi: int = 300
     right_eye = np.array([p_right.x * w, p_right.y * h])
     left_eye = np.array([p_left.x * w, p_left.y * h])
     
-    chin = np.array([face_landmarks.landmark[152].x * w, face_landmarks.landmark[152].y * h])
-    forehead = np.array([face_landmarks.landmark[10].x * w, face_landmarks.landmark[10].y * h])
-    
     # 2. Alignment Angle
     dy = left_eye[1] - right_eye[1]
     dx = left_eye[0] - right_eye[0]
@@ -543,78 +658,77 @@ def align_and_crop_face(rgba_img: Image.Image, country_code: str, dpi: int = 300
     
     eye_mid = (right_eye + left_eye) / 2.0
     
-    # Rotate landmarks to horizontal eye plane to compute exact vertical height
+    # 3. Rotate all landmarks to the horizontal eye plane
     cos_val = np.cos(-angle_rad)
     sin_val = np.sin(-angle_rad)
     
-    def rotate_point(pt):
+    rotated_landmarks = []
+    for lm in face_landmarks.landmark:
+        pt = np.array([lm.x * w, lm.y * h])
         rx = eye_mid[0] + (pt[0] - eye_mid[0]) * cos_val - (pt[1] - eye_mid[1]) * sin_val
         ry = eye_mid[1] + (pt[0] - eye_mid[0]) * sin_val + (pt[1] - eye_mid[1]) * cos_val
-        return np.array([rx, ry])
+        rotated_landmarks.append(np.array([rx, ry]))
         
-    rotated_chin = rotate_point(chin)
-    rotated_forehead = rotate_point(forehead)
-    rotated_eye_mid = rotate_point(eye_mid)
-    
-    # 3. Calculate Head Height (chin to forehead * 1.35 for anatomical head top)
-    face_mesh_height = rotated_chin[1] - rotated_forehead[1]
-    estimated_head_height = face_mesh_height * 1.35
-    
-    # Optional silhouette verification for actual hair top
-    rot_mat = cv2.getRotationMatrix2D(tuple(eye_mid), angle_deg, 1.0)
-    rotated_alpha = cv2.warpAffine(alpha, rot_mat, (w, h), flags=cv2.INTER_NEAREST)
-    
-    col_start = max(0, int(rotated_eye_mid[0] - face_mesh_height * 0.5))
-    col_end = min(w, int(rotated_eye_mid[0] + face_mesh_height * 0.5))
-    y_indices, _ = np.where(rotated_alpha[:, col_start:col_end] > 127)
-    
-    if len(y_indices) > 0:
-        actual_hair_top = np.min(y_indices)
-        min_hair_y = rotated_chin[1] - face_mesh_height * 2.0
-        max_hair_y = rotated_chin[1] - face_mesh_height * 1.15
-        if min_hair_y <= actual_hair_top <= max_hair_y:
-            estimated_head_height = rotated_chin[1] - actual_hair_top
-            
-    # 4. Sizing & Targeting
+    # 4. Resolve presets & configuration ratios
     preset = COUNTRY_PRESETS.get(country_code.lower(), COUNTRY_PRESETS["india"])
     width_mm = preset["width_mm"]
     height_mm = preset["height_mm"]
-    
     W = int(width_mm / 25.4 * dpi)
     H = int(height_mm / 25.4 * dpi)
+    target_aspect_ratio = width_mm / height_mm
     
-    target_head_ratio = (preset["head_height_ratio_min"] + preset["head_height_ratio_max"]) / 2.0
-    target_eye_ratio = (preset["eye_level_ratio_min"] + preset["eye_level_ratio_max"]) / 2.0
+    eye_line_ratio = preset.get("eye_line_ratio", PASSPORT_CONFIG["eye_line_ratio"])
+    face_width_ratio = preset.get("face_width_ratio", PASSPORT_CONFIG["face_width_ratio"])
+    top_margin_ratio = preset.get("top_margin_ratio", PASSPORT_CONFIG["top_margin_ratio"])
+    bottom_margin_ratio = preset.get("bottom_margin_ratio", PASSPORT_CONFIG["bottom_margin_ratio"])
     
-    target_head_height_px = H * target_head_ratio
-    target_eye_y_px = H * (1.0 - target_eye_ratio)
+    # 5. Crop logic call
+    x1, y1, x2, y2 = calculate_passport_crop(
+        w, h,
+        rotated_landmarks,
+        target_aspect_ratio,
+        eye_line_ratio,
+        face_width_ratio,
+        top_margin_ratio,
+        bottom_margin_ratio
+    )
     
-    # 5. Transform Matrix (combining scale, center shifts, and horizontal alignment)
-    scale = (target_head_height_px / estimated_head_height) * scale_adjust
+    # Apply scaling with self-correct feedback loop adjustment
+    crop_w = x2 - x1
+    scale = (W / crop_w) * scale_adjust
     
-    dst_center = (W / 2.0 + center_shift[0] * W, target_eye_y_px + center_shift[1] * H)
-    src_center = tuple(eye_mid)
+    # Target eye mid destination mapping
+    rotated_eye_mid = (rotated_landmarks[468] + rotated_landmarks[473]) / 2.0 if num_landmarks >= 478 else \
+                      (rotated_landmarks[33] + rotated_landmarks[263]) / 2.0
     
-    M = cv2.getRotationMatrix2D(src_center, angle_deg, scale)
-    M[0, 2] += (dst_center[0] - src_center[0])
-    M[1, 2] += (dst_center[1] - src_center[1])
+    dst_center = (
+        W / 2.0 + center_shift[0] * W,
+        H * eye_line_ratio + center_shift[1] * H
+    )
     
-    # 6. Apply warp affine with transparent padding
+    # 6. Apply affine rotation & scaling
+    M = cv2.getRotationMatrix2D(tuple(eye_mid), angle_deg, scale)
+    M[0, 2] += (dst_center[0] - eye_mid[0])
+    M[1, 2] += (dst_center[1] - eye_mid[1])
+    
     warped_np = cv2.warpAffine(img_np, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
     warped_rgba = Image.fromarray(warped_np, mode="RGBA")
     
+    # Populate evaluation metrics (preserving expected properties for verify_passport_quality)
+    face_mesh_height = rotated_landmarks[152][1] - rotated_landmarks[10][1]
+    estimated_head_height = face_mesh_height * 1.35
+    
     metrics = {
-        "head_height_ratio": target_head_ratio,
-        "eye_level_ratio": target_eye_ratio,
+        "head_height_ratio": (preset["head_height_ratio_min"] + preset["head_height_ratio_max"]) / 2.0,
+        "eye_level_ratio": (preset["eye_level_ratio_min"] + preset["eye_level_ratio_max"]) / 2.0,
         "target_size_px": (W, H),
         "angle_deg": angle_deg,
         "face_mesh_height": face_mesh_height,
         "estimated_head_height": estimated_head_height,
         "scale": scale,
-        "chin_pos": rotated_chin,
+        "chin_pos": rotated_landmarks[152],
         "eye_mid_pos": rotated_eye_mid,
     }
-    
     return warped_rgba, metrics
 
 
@@ -972,6 +1086,11 @@ def detect_face_crop(image_path: str, output_path: str, transparent_output_path:
     
     for attempt in range(3):
         transparent_crop, metrics = align_and_crop_face(rgba_img, country_code, dpi, scale_adj, shift)
+        if metrics.get("center_fallback"):
+            raise HTTPException(
+                status_code=400,
+                detail="No face detected. Please upload a clear front-facing photo."
+            )
         
         # Edge Matting and Anti-Halo
         refined_np = refine_edges_and_halo(np.array(transparent_crop))
@@ -1142,6 +1261,9 @@ async def recolor_image(image_id: str, bg_color: str = Form(...)):
     Updates processed_path/processed_url so downloads and print jobs pick
     up the new color too, not just the live preview.
     """
+    bg_color = validate_and_normalize_color(bg_color)
+    print("Received bg_color:", bg_color)
+
     if image_id not in uploaded_images:
         raise HTTPException(404, "Image not found")
     transparent_path = uploaded_images[image_id].get("transparent_path")
@@ -1159,6 +1281,11 @@ async def recolor_image(image_id: str, bg_color: str = Form(...)):
     uploaded_images[image_id]["processed_path"] = final_path
     processed_url = f"/processed/{image_id}_final.png"
     uploaded_images[image_id]["processed_url"] = processed_url
+
+    if image_id in processing_status:
+        processing_status[image_id]["processed_url"] = processed_url
+        processing_status[image_id]["bg_color"] = bg_color
+
     return {"success": True, "data": {"processed_url": processed_url, "bg_color": bg_color}}
 
 

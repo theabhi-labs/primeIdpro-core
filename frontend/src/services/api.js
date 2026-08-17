@@ -40,6 +40,11 @@ api.interceptors.request.use((config) => {
         config.headers['X-Session-ID'] = sessionId;
         console.log(`🆔 Session ID added to request: ${config.url}`);
     }
+    if (config.data instanceof FormData) {
+        if (config.headers) {
+            delete config.headers['Content-Type'];
+        }
+    }
     return config;
 });
 
