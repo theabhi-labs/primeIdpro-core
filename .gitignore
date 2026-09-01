@@ -121,10 +121,12 @@ venv/
 # FastAPI Uploads
 # =========================
 backend/uploads/
+backend/app/uploads/
 backend/temp/
 backend/cache/
 backend/logs/
 backend/processed/
+backend/app/processed/
 backend/static/uploads/
 
 # AI Models (optional)

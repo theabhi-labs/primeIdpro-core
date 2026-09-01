@@ -8,20 +8,19 @@ class PassportResizer:
     def __init__(self):
         self.dpi = 300
         self.standards = {
-            "35x45": {"width": 35, "height": 45, "unit": "mm", "name": "35mm x 45mm"},
-            "2x2": {"width": 2, "height": 2, "unit": "inch", "name": "2 inch x 2 inch"},
-            "50x70": {"width": 50, "height": 70, "unit": "mm", "name": "50mm x 70mm"},
-            "33x48": {"width": 33, "height": 48, "unit": "mm", "name": "33mm x 48mm"},
-            "35x45": {"width": 35, "height": 45, "unit": "mm", "name": "35mm x 45mm"}
+            "35x45": {"width_px": 413, "height_px": 531, "width_mm": 35, "height_mm": 45, "name": "35mm x 45mm (413x531 px @ 300 DPI)"},
+            "2x2": {"width_px": 600, "height_px": 600, "width_mm": 50.8, "height_mm": 50.8, "name": "2 inch x 2 inch (600x600 px @ 300 DPI)"},
+            "50x70": {"width_px": 591, "height_px": 827, "width_mm": 50, "height_mm": 70, "name": "50mm x 70mm (591x827 px @ 300 DPI)"},
+            "33x48": {"width_px": 390, "height_px": 567, "width_mm": 33, "height_mm": 48, "name": "33mm x 48mm (390x567 px @ 300 DPI)"},
         }
         logger.info("✅ Passport Resizer initialized with presets")
     
     def mm_to_pixels(self, mm):
         inches = mm / 25.4
-        return int(inches * self.dpi)
+        return int(round(inches * self.dpi))
     
     def inches_to_pixels(self, inches):
-        return int(inches * self.dpi)
+        return int(round(inches * self.dpi))
     
     def resize_to_standard(self, image_input, standard="35x45"):
         """Resize to standard size"""
@@ -32,13 +31,8 @@ class PassportResizer:
                 img = image_input
             
             specs = self.standards.get(standard, self.standards["35x45"])
-            
-            if specs["unit"] == "mm":
-                width_px = self.mm_to_pixels(specs["width"])
-                height_px = self.mm_to_pixels(specs["height"])
-            else:
-                width_px = self.inches_to_pixels(specs["width"])
-                height_px = self.inches_to_pixels(specs["height"])
+            width_px = specs["width_px"]
+            height_px = specs["height_px"]
             
             # Resize maintaining aspect ratio
             img_ratio = img.width / img.height

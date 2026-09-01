@@ -1,15 +1,18 @@
 {
   "name": "primeidpro",
   "version": "1.0.0",
-  "description": "PrimeIdPro Passport Photo Editor",
+  "description": "PrimeIdPro Passport Photo Editor & Document Engine",
   "author": "Abhishek Yadav",
   "private": true,
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir",
+    "test:modules": "node tests/verify-modules.js"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.9",
     "wait-on": "^9.0.10"
   },
@@ -27,7 +30,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "package.json"
+      "package.json",
+      "src/**/*",
+      "assets/**/*"
     ],
     "extraResources": [
       {
@@ -40,8 +45,17 @@
       }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Prime ID Pro",
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
@@ -49,7 +63,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "PrimeIdPro",
-      "deleteAppDataOnUninstall": false
-    }
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.primeidpro.online"
+      }
+    ]
   }
 }

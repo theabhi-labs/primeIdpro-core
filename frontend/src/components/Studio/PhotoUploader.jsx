@@ -54,8 +54,10 @@ const PhotoUploader = ({ onUpload }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     onDropRejected,
-    accept: { 'image/*': ['.jpeg', '.jpg', '.png', '.webp'] },
-    maxSize: 10 * 1024 * 1024,
+    accept: { 
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.avif', '.heic', '.heif', '.bmp', '.tiff', '.jfif'] 
+    },
+    maxSize: 25 * 1024 * 1024,
     multiple: true,
     noClick: true,
   });
@@ -118,13 +120,13 @@ const PhotoUploader = ({ onUpload }) => {
                 id="file-upload-multi"
                 type="file"
                 multiple
-                accept="image/jpeg,image/jpg,image/png,image/webp"
+                accept="image/jpeg,image/jpg,image/png,image/webp,image/avif,image/heic,image/heif,image/bmp,image/tiff,image/jfif"
                 onChange={handleFileInputChange}
                 className="hidden"
               />
             </label>
             <p className="text-xs text-slate-500">
-              Supports: <span className="text-slate-300">JPEG, PNG, WEBP (Max 10MB)</span>
+              Supports: <span className="text-slate-300">JPEG, PNG, WEBP, AVIF, HEIC (Max 25MB)</span>
             </p>
           </div>
         </div>

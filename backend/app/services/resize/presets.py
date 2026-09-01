@@ -9,62 +9,74 @@ PASSPORT_PRESETS = {
         "standard": "35x45",
         "width_mm": 35,
         "height_mm": 45,
+        "width_px": 413,
+        "height_px": 531,
         "bg_color": "#FFFFFF",
-        "head_height": "70-80%",
-        "eye_level": "60-70%",
-        "description": "Indian Passport (35mm x 45mm)"
+        "head_height": "65-75%",
+        "eye_level": "30-35%",
+        "description": "Indian Passport (35mm x 45mm @ 300 DPI)"
     },
     "usa": {
         "name": "USA",
         "standard": "2x2",
         "width_inch": 2,
         "height_inch": 2,
-        "width_mm": 51,
-        "height_mm": 51,
+        "width_mm": 50.8,
+        "height_mm": 50.8,
+        "width_px": 600,
+        "height_px": 600,
         "bg_color": "#FFFFFF",
-        "head_height": "50-70%",
-        "eye_level": "55-65%",
-        "description": "US Passport/Visa (2x2 inch)"
+        "head_height": "50-69%",
+        "eye_level": "30-40%",
+        "description": "US Passport/Visa (2x2 inch @ 300 DPI)"
     },
     "uk": {
         "name": "United Kingdom",
         "standard": "35x45",
         "width_mm": 35,
         "height_mm": 45,
+        "width_px": 413,
+        "height_px": 531,
         "bg_color": "#FFFFFF",
-        "head_height": "70-80%",
-        "eye_level": "60-70%",
-        "description": "UK Passport (35mm x 45mm)"
+        "head_height": "65-75%",
+        "eye_level": "30-35%",
+        "description": "UK Passport (35mm x 45mm @ 300 DPI)"
     },
     "canada": {
         "name": "Canada",
         "standard": "50x70",
         "width_mm": 50,
         "height_mm": 70,
+        "width_px": 591,
+        "height_px": 827,
         "bg_color": "#FFFFFF",
-        "head_height": "60-75%",
-        "eye_level": "55-65%",
-        "description": "Canadian Passport (50mm x 70mm)"
+        "head_height": "44-52%",
+        "eye_level": "34-42%",
+        "description": "Canadian Passport (50mm x 70mm @ 300 DPI)"
     },
     "australia": {
         "name": "Australia",
         "standard": "35x45",
         "width_mm": 35,
         "height_mm": 45,
+        "width_px": 413,
+        "height_px": 531,
         "bg_color": "#FFFFFF",
-        "head_height": "70-80%",
-        "eye_level": "60-70%",
-        "description": "Australian Passport (35mm x 45mm)"
+        "head_height": "65-75%",
+        "eye_level": "30-35%",
+        "description": "Australian Passport (35mm x 45mm @ 300 DPI)"
     },
     "europe": {
         "name": "European Union",
         "standard": "35x45",
         "width_mm": 35,
         "height_mm": 45,
+        "width_px": 413,
+        "height_px": 531,
         "bg_color": "#FFFFFF",
-        "head_height": "70-80%",
-        "eye_level": "60-70%",
-        "description": "EU Passport (35mm x 45mm)"
+        "head_height": "65-75%",
+        "eye_level": "30-35%",
+        "description": "EU Passport (35mm x 45mm @ 300 DPI)"
     },
     "schengen": {
         "name": "Schengen Visa",

@@ -360,6 +360,15 @@ export const deleteSheet = async (sheetId) => {
 // PDF/EXPORT ENDPOINTS
 // ============================================
 
+// Generate 300 DPI PDF Sheet directly
+export const generateSheetPdf = async (payload) => {
+    console.log('📑 Requesting 300 DPI Sheet PDF generation:', payload);
+    const response = await api.post('/sheet/generate-pdf', payload, {
+        responseType: 'blob',
+    });
+    return response.data;
+};
+
 // Export to PDF
 export const exportToPDF = async (sheetId, paperSize = 'A4') => {
     console.log(`📑 Exporting sheet ${sheetId} to PDF (${paperSize})`);
@@ -485,20 +494,28 @@ export const base64ToBlob = (base64, mimeType = 'image/png') => {
 
 // Validate image file
 export const validateImage = (file) => {
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp'];
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const validExtensions = ['jpeg', 'jpg', 'png', 'webp', 'avif', 'heic', 'heif', 'bmp', 'tiff', 'jfif'];
+    const validMimeTypes = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif',
+        'image/heic', 'image/heif', 'image/bmp', 'image/tiff', 'image/jfif', 'image/x-icon'
+    ];
+    const maxSize = 25 * 1024 * 1024; // 25MB
     
-    if (!validTypes.includes(file.type)) {
-        console.warn(` Invalid file type: ${file.type}`);
-        return { valid: false, error: 'Invalid file type. Please upload JPEG, PNG, or WEBP images.' };
+    const ext = file.name ? file.name.split('.').pop().toLowerCase() : '';
+    const isMimeValid = file.type ? (file.type.startsWith('image/') || validMimeTypes.includes(file.type.toLowerCase())) : false;
+    const isExtValid = ext ? validExtensions.includes(ext) : false;
+
+    if (!isMimeValid && !isExtValid) {
+        console.warn(` Invalid file type: ${file.type || 'unknown'} (${file.name})`);
+        return { valid: false, error: 'Invalid file type. Please upload JPEG, PNG, WEBP, AVIF, or HEIC images.' };
     }
     
     if (file.size > maxSize) {
         console.warn(` File too large: ${file.size} bytes > ${maxSize} bytes`);
-        return { valid: false, error: 'File too large. Maximum size is 10MB.' };
+        return { valid: false, error: 'File too large. Maximum size is 25MB.' };
     }
     
-    console.log(` File validation passed: ${file.name} (${file.type}, ${file.size} bytes)`);
+    console.log(` File validation passed: ${file.name} (${file.type || ext}, ${file.size} bytes)`);
     return { valid: true };
 };
 

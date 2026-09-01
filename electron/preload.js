@@ -1,24 +1,70 @@
-// preload.js
+// electron/preload.js
 const { contextBridge, ipcRenderer } = require("electron");
 
 window.addEventListener("DOMContentLoaded", () => {
-    console.log("Preload loaded");
+    console.log("[PRELOAD] Prime ID Pro secure preload initialized");
 });
 
-// Exposed to the renderer as `window.electronAPI`. The frontend uses this
-// (see printLayout() in App.jsx) instead of window.print()/iframe.print(),
-// since Electron's built-in print preview does not work for pages that
-// were never shown on screen.
+// ========================================================================
+// NAMESPACED SECURE DESKTOP API (window.primeIdPro)
+// ========================================================================
+const primeIdProAPI = {
+    app: {
+        getIdentity: () => ipcRenderer.invoke("app:getIdentity"),
+        getApiUrl: () => ipcRenderer.invoke("app:get-api-url"),
+        getDiskSpace: () => ipcRenderer.invoke("app:getDiskSpace"),
+    },
+    jobs: {
+        create: (payload) => ipcRenderer.invoke("jobs:create", payload),
+        get: (jobId) => ipcRenderer.invoke("jobs:get", jobId),
+        list: (params) => ipcRenderer.invoke("jobs:list", params),
+        listOnline: () => ipcRenderer.invoke("jobs:listOnline"),
+        updateStatus: (payload) => ipcRenderer.invoke("jobs:updateStatus", payload),
+    },
+    printing: {
+        print: (html, options, jobId) => ipcRenderer.invoke("printing:print", { html, options, jobId }),
+        createPdf: (html, options, jobId) => ipcRenderer.invoke("printing:createPdf", { html, options, jobId }),
+    },
+    device: {
+        getStatus: () => ipcRenderer.invoke("device:status"),
+        pair: (payload) => ipcRenderer.invoke("device:pair", payload),
+        unpair: () => ipcRenderer.invoke("device:unpair"),
+        bind: (payload) => ipcRenderer.invoke("device:bind", payload),
+        revoke: () => ipcRenderer.invoke("device:revoke"),
+    },
+    poller: {
+        getStatus: () => ipcRenderer.invoke("poller:status"),
+        trigger: () => ipcRenderer.invoke("poller:trigger"),
+    },
+    sync: {
+        enqueue: (payload) => ipcRenderer.invoke("sync:enqueue", payload),
+    },
+    updater: {
+        getStatus: () => ipcRenderer.invoke("updater:status"),
+        check: () => ipcRenderer.invoke("updater:check"),
+        download: () => ipcRenderer.invoke("updater:download"),
+        install: () => ipcRenderer.invoke("updater:install"),
+        onStatusChange: (callback) => {
+            if (typeof callback !== "function") return;
+            const listener = (event, data) => callback(data);
+            ipcRenderer.on("updater:status", listener);
+            return () => ipcRenderer.removeListener("updater:status", listener);
+        },
+    },
+    diagnostics: {
+        get: () => ipcRenderer.invoke("diagnostics:get"),
+    },
+};
+
+contextBridge.exposeInMainWorld("primeIdPro", primeIdProAPI);
+
+// ========================================================================
+// BACKWARD COMPATIBILITY BRIDGE (window.electronAPI)
+// Preserves existing frontend code without changes
+// ========================================================================
 contextBridge.exposeInMainWorld("electronAPI", {
     isElectron: true,
     getApiUrl: () => ipcRenderer.sendSync("get-api-url"),
-
-    // Opens the native OS print dialog (lets the user pick a real printer
-    // or "Microsoft Print to PDF"). Automatically falls back to generating
-    // and opening a PDF if the native dialog can't produce a preview.
     printSheet: (html, options) => ipcRenderer.invoke("print:native", { html, options }),
-
-    // Skips the native dialog entirely: generates a PDF straight away and
-    // opens it in the system's default PDF viewer.
     printSheetToPdf: (html, options) => ipcRenderer.invoke("print:pdf", { html, options }),
 });

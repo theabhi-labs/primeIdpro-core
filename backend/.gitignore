@@ -7,6 +7,12 @@ venv/
 # Logs
 *.log
 
+# Uploads & Processed files
+uploads/
+app/uploads/
+processed/
+app/processed/
+
 # Optional: temp files
 *.sqlite3
 *.db
