@@ -149,8 +149,9 @@ function registerIpcHandlers() {
             jobPoller.poll();
             return { success: true, device };
         } catch (err) {
-            logger.error("IPC_DEVICE_PAIR_ERROR", { error: err.message });
-            return { success: false, error: err.message };
+            const errorMsg = err.response?.data?.message || err.message || (typeof err === "string" ? err : "Pairing failed");
+            logger.error("IPC_DEVICE_PAIR_ERROR", { error: errorMsg });
+            return { success: false, error: errorMsg };
         }
     });
 
@@ -159,7 +160,8 @@ function registerIpcHandlers() {
             const device = deviceManager.unpair();
             return { success: true, device };
         } catch (err) {
-            return { success: false, error: err.message };
+            const errorMsg = err.response?.data?.message || err.message || (typeof err === "string" ? err : "Unpair failed");
+            return { success: false, error: errorMsg };
         }
     });
 
@@ -169,7 +171,8 @@ function registerIpcHandlers() {
             const status = deviceManager.bindDevice({ centerId, deviceId, credential });
             return { success: true, device: status };
         } catch (err) {
-            return { success: false, error: err.message };
+            const errorMsg = err.response?.data?.message || err.message || (typeof err === "string" ? err : "Binding failed");
+            return { success: false, error: errorMsg };
         }
     });
 

@@ -73,15 +73,29 @@ async function createWindow() {
     }, 5000);
 }
 
-// ========================================================================
-// APPLICATION STARTUP ORCHESTRATION
-// ========================================================================
-app.whenReady().then(async () => {
-    logger.info("PRIME_ID_PRO_APP_READY", {
-        appId: config.APP_ID,
-        version: config.APP_VERSION,
-        isDev: config.isDev
+// Ensure single instance lock to prevent duplicate processes
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+    logger.warn("ANOTHER_INSTANCE_ALREADY_RUNNING_QUITTING");
+    app.quit();
+} else {
+    app.on("second-instance", () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
     });
+
+    // ========================================================================
+    // APPLICATION STARTUP ORCHESTRATION
+    // ========================================================================
+    app.whenReady().then(async () => {
+        logger.info("PRIME_ID_PRO_APP_READY", {
+            appId: config.APP_ID,
+            version: config.APP_VERSION,
+            isDev: config.isDev
+        });
 
     try {
         // 1. Apply Session-level Content Security Policy
@@ -163,3 +177,4 @@ app.on("activate", async () => {
         await createWindow();
     }
 });
+}

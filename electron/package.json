@@ -24,6 +24,7 @@
   "build": {
     "appId": "com.primeidpro.desktop",
     "productName": "PrimeIdPro",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
@@ -54,7 +55,6 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "publisherName": "Prime ID Pro",
       "verifyUpdateCodeSignature": false
     },
     "nsis": {

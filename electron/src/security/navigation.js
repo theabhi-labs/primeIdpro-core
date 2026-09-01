@@ -4,8 +4,9 @@ const logger = require("../logging/logger");
 
 const ALLOWED_EXTERNAL_PROTOCOLS = ["https:", "mailto:"];
 const ALLOWED_EXTERNAL_DOMAINS = [
+    "primeidpro-central-platform.onrender.com",
     "primeidpro.online",
-    "api.primeidpro.online",
+    "portal.primeidpro.online",
     "updates.primeidpro.online",
     "github.com"
 ];

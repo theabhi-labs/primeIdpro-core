@@ -4,9 +4,27 @@ const config = require("../config");
 const logger = require("../logging/logger");
 const appIdentity = require("../identity/appIdentity");
 
+function extractErrorString(responseData, status) {
+    if (!responseData) return status ? `HTTP ${status}` : "Network request failed";
+    if (typeof responseData === "string") return responseData;
+    if (typeof responseData.message === "string" && responseData.message.trim()) return responseData.message;
+    if (typeof responseData.error === "string" && responseData.error.trim()) return responseData.error;
+    if (responseData.error && typeof responseData.error === "object") {
+        if (typeof responseData.error.message === "string") return responseData.error.message;
+    }
+    if (typeof responseData.detail === "string" && responseData.detail.trim()) return responseData.detail;
+    try {
+        return JSON.stringify(responseData);
+    } catch {
+        return status ? `HTTP ${status}` : "Network request failed";
+    }
+}
+
 class ApiClient {
     constructor() {
-        this.baseUrl = config.REMOTE_API_BASE_URL;
+        this.primaryUrl = config.REMOTE_API_BASE_URL;
+        this.fallbackUrl = config.REMOTE_API_FALLBACK_URL;
+        this.baseUrl = this.primaryUrl;
         this.agent = new https.Agent({
             keepAlive: true,
             timeout: 30000
@@ -17,6 +35,14 @@ class ApiClient {
         if (newUrl) {
             this.baseUrl = newUrl;
         }
+    }
+
+    getBaseUrls() {
+        const urls = [this.baseUrl];
+        if (this.fallbackUrl && this.fallbackUrl !== this.baseUrl && !urls.includes(this.fallbackUrl)) {
+            urls.push(this.fallbackUrl);
+        }
+        return urls;
     }
 
     async request({
@@ -30,7 +56,7 @@ class ApiClient {
         deviceId = null,
         retries = 2
     }) {
-        const url = endpoint.startsWith("http") ? endpoint : `${this.baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+        const candidateBaseUrls = endpoint.startsWith("http") ? [null] : this.getBaseUrls();
         const installationId = appIdentity.getInstallationId();
 
         // Lazy load deviceManager to prevent circular dependency
@@ -69,58 +95,71 @@ class ApiClient {
             requestHeaders["X-Idempotency-Key"] = idempotencyKey;
         }
 
-        let attempt = 0;
-        let delay = 1000;
+        let lastErrorMsg = "Network request failed after retries";
 
-        while (attempt <= retries) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeout);
+        for (const currentBaseUrl of candidateBaseUrls) {
+            const url = currentBaseUrl 
+                ? `${currentBaseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`
+                : endpoint;
 
-                logger.info("API_REQUEST_START", { method, endpoint, attempt });
+            let attempt = 0;
+            let delay = 1000;
 
-                const response = await fetch(url, {
-                    method,
-                    headers: requestHeaders,
-                    body: data ? JSON.stringify(data) : undefined,
-                    signal: controller.signal
-                });
+            while (attempt <= retries) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-                clearTimeout(timeoutId);
+                    logger.info("API_REQUEST_START", { method, endpoint, url, attempt });
 
-                const responseData = await response.json().catch(() => null);
+                    const response = await fetch(url, {
+                        method,
+                        headers: requestHeaders,
+                        body: data ? JSON.stringify(data) : undefined,
+                        signal: controller.signal
+                    });
 
-                if (response.ok) {
-                    logger.info("API_REQUEST_SUCCESS", { method, endpoint, status: response.status });
-                    return { success: true, status: response.status, data: responseData?.data || responseData };
+                    clearTimeout(timeoutId);
+
+                    const responseData = await response.json().catch(() => null);
+
+                    if (response.ok) {
+                        logger.info("API_REQUEST_SUCCESS", { method, endpoint, status: response.status });
+                        return { success: true, status: response.status, data: responseData?.data || responseData };
+                    }
+
+                    const extractedError = extractErrorString(responseData, response.status);
+                    lastErrorMsg = extractedError;
+
+                    // Fatal client errors (do not retry)
+                    if ([400, 401, 403, 404, 409, 410, 422].includes(response.status)) {
+                        logger.warn("API_CLIENT_ERROR_NO_RETRY", { method, endpoint, status: response.status, error: extractedError });
+                        return {
+                            success: false,
+                            status: response.status,
+                            error: extractedError,
+                            data: responseData?.data || responseData
+                        };
+                    }
+
+                    // Server errors (5xx) - retryable
+                    logger.warn("API_SERVER_ERROR_RETRYABLE", { method, endpoint, status: response.status, attempt });
+                } catch (err) {
+                    const isAbort = err.name === "AbortError";
+                    const errMsg = isAbort ? "Request timed out" : err.message;
+                    lastErrorMsg = errMsg;
+                    logger.warn("API_REQUEST_FAILED", { method, endpoint, error: errMsg, attempt });
                 }
 
-                // Fatal client errors (do not retry)
-                if ([400, 401, 403, 404, 409, 410, 422].includes(response.status)) {
-                    logger.warn("API_CLIENT_ERROR_NO_RETRY", { method, endpoint, status: response.status, data: responseData });
-                    return {
-                        success: false,
-                        status: response.status,
-                        error: responseData?.message || responseData?.error || `HTTP ${response.status}`,
-                        data: responseData?.data || responseData
-                    };
+                attempt++;
+                if (attempt <= retries) {
+                    await new Promise(r => setTimeout(r, delay));
+                    delay = Math.min(delay * 2, 10000);
                 }
-
-                // Server errors (5xx) - retryable
-                logger.warn("API_SERVER_ERROR_RETRYABLE", { method, endpoint, status: response.status, attempt });
-            } catch (err) {
-                const isAbort = err.name === "AbortError";
-                logger.warn("API_REQUEST_FAILED", { method, endpoint, error: isAbort ? "Timeout" : err.message, attempt });
-            }
-
-            attempt++;
-            if (attempt <= retries) {
-                await new Promise(r => setTimeout(r, delay));
-                delay = Math.min(delay * 2, 10000);
             }
         }
 
-        return { success: false, error: "Network request failed after retries" };
+        return { success: false, error: lastErrorMsg };
     }
 
     async post(endpoint, data, options = {}) {

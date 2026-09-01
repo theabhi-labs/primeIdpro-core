@@ -45,6 +45,8 @@ async function runTests() {
         assert.ok(config.STAGED_PHOTOS_DIR);
         assert.strictEqual(config.POLL_INTERVAL_MS, 15000);
         assert.strictEqual(config.HEARTBEAT_INTERVAL_MS, 60000);
+        assert.strictEqual(config.REMOTE_API_BASE_URL, "https://primeidpro-central-platform.onrender.com/api/v1");
+        assert.strictEqual(config.REMOTE_API_FALLBACK_URL, "https://primeidpro.online/api/v1");
     });
 
     test("AppIdentity generates and persists installationId", () => {

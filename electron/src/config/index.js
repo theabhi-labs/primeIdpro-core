@@ -47,7 +47,8 @@ module.exports = {
     },
 
     // Production remote Central Server (Authority)
-    REMOTE_API_BASE_URL: process.env.PRIMEIDPRO_API_URL || "https://api.primeidpro.online/api/v1",
+    REMOTE_API_BASE_URL: process.env.PRIMEIDPRO_API_URL || "https://primeidpro-central-platform.onrender.com/api/v1",
+    REMOTE_API_FALLBACK_URL: process.env.PRIMEIDPRO_FALLBACK_URL || "https://primeidpro.online/api/v1",
     UPDATE_SERVER_URL: process.env.PRIMEIDPRO_UPDATE_URL || "https://updates.primeidpro.online",
     DEFAULT_RELEASE_CHANNEL: "stable",
 

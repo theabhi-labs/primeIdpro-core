@@ -111,13 +111,15 @@ const PrintSettingsModal = ({ settings, onSave, onClose }) => {
           setDeviceState(res.device);
           setPairingCode('');
         } else {
-          setPairingMsg({ type: 'error', text: res.error || 'Pairing failed' });
+          const errorMsg = res.error?.message || (typeof res.error === 'string' ? res.error : (res.message || 'Pairing failed'));
+          setPairingMsg({ type: 'error', text: errorMsg });
         }
       } else {
         setPairingMsg({ type: 'error', text: 'Device pairing requires the Prime ID Pro desktop client' });
       }
     } catch (err) {
-      setPairingMsg({ type: 'error', text: err.message || 'Connection error' });
+      const errorMsg = err.response?.data?.message || err.message || (typeof err === 'string' ? err : 'Connection failed');
+      setPairingMsg({ type: 'error', text: errorMsg });
     } finally {
       setIsPairing(false);
     }
@@ -131,10 +133,14 @@ const PrintSettingsModal = ({ settings, onSave, onClose }) => {
         if (res.success) {
           setDeviceState(res.device);
           setPairingMsg({ type: 'info', text: 'Device unpaired successfully' });
+        } else {
+          const errorMsg = res.error?.message || (typeof res.error === 'string' ? res.error : (res.message || 'Failed to unpair'));
+          setPairingMsg({ type: 'error', text: errorMsg });
         }
       }
     } catch (err) {
-      setPairingMsg({ type: 'error', text: err.message });
+      const errorMsg = err.response?.data?.message || err.message || (typeof err === 'string' ? err : 'Connection failed');
+      setPairingMsg({ type: 'error', text: errorMsg });
     }
   };
 
@@ -145,7 +151,8 @@ const PrintSettingsModal = ({ settings, onSave, onClose }) => {
         setPairingMsg({ type: 'success', text: 'Online job poll cycle triggered' });
         refreshDeviceStatus();
       } catch (err) {
-        setPairingMsg({ type: 'error', text: err.message });
+        const errorMsg = err.response?.data?.message || err.message || (typeof err === 'string' ? err : 'Connection failed');
+        setPairingMsg({ type: 'error', text: errorMsg });
       }
     }
   };
