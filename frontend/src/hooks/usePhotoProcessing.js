@@ -153,5 +153,70 @@ export default function usePhotoProcessing() {
         setProcessedPhotos(completed);
     }, [uploads]);
 
+    
+    // AUTO_INBOUND_CLOUD_SYNC: Listen to Inbound Online Jobs from Central Cloud
+    useEffect(() => {
+        if (!window.primeIdPro?.jobs?.listOnline) return;
+
+        const checkOnlineJobs = async () => {
+            try {
+                const res = await window.primeIdPro.jobs.listOnline();
+                if (res?.success && Array.isArray(res.jobs) && res.jobs.length > 0) {
+                    for (const job of res.jobs) {
+                        const items = job.items || job.stagedItems || [];
+                        for (let idx = 0; idx < items.length; idx++) {
+                            const item = items[idx];
+                            const rawPath = item.originalPath || item.localPath || item.stagedPath || item.photoUrl;
+                            if (!rawPath) continue;
+
+                            const photoId = `online_${job.id}_${idx}`;
+
+                            let dataUrl = rawPath;
+                            if (window.primeIdPro?.jobs?.readImageBase64 && !rawPath.startsWith('http') && !rawPath.startsWith('data:')) {
+                                try {
+                                    const imgRes = await window.primeIdPro.jobs.readImageBase64(rawPath);
+                                    if (imgRes.success && imgRes.dataUrl) {
+                                        dataUrl = imgRes.dataUrl;
+                                    }
+                                } catch {}
+                            }
+
+                            setUploads(prev => {
+                                if (prev.some(u => u.id === photoId || u.jobCode === (job.metadata?.jobCode || job.jobCode))) {
+                                    return prev;
+                                }
+
+                                const onlineUpload = {
+                                    id: photoId,
+                                    jobCode: job.metadata?.jobCode || job.jobCode || 'ONLINE-JOB',
+                                    file: null,
+                                    preview: dataUrl,
+                                    status: 'completed',
+                                    progress: 100,
+                                    error: null,
+                                    processedUrl: dataUrl,
+                                    transparentUrl: dataUrl,
+                                    bgColor: item.bgColor || job.metadata?.backgroundColor || '#FFFFFF',
+                                    serverId: job.serverJobId || job.id,
+                                    isOnline: true,
+                                    customerName: job.metadata?.customerName || 'Online Customer',
+                                    copies: job.metadata?.copies || job.metadata?.totalCopies || 8
+                                };
+
+                                return [...prev, onlineUpload];
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                // Ignore silent poll error
+            }
+        };
+
+        checkOnlineJobs();
+        const interval = setInterval(checkOnlineJobs, 3000);
+        return () => clearInterval(interval);
+    }, []);
+
     return { uploads, processedPhotos, uploadPhotos, removePhoto, updatePhotoUrl };
 }

@@ -19,6 +19,7 @@ const primeIdProAPI = {
         get: (jobId) => ipcRenderer.invoke("jobs:get", jobId),
         list: (params) => ipcRenderer.invoke("jobs:list", params),
         listOnline: () => ipcRenderer.invoke("jobs:listOnline"),
+        readImageBase64: (filePath) => ipcRenderer.invoke("jobs:readImageBase64", filePath),
         updateStatus: (payload) => ipcRenderer.invoke("jobs:updateStatus", payload),
     },
     printing: {

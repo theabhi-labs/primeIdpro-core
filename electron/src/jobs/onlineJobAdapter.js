@@ -116,8 +116,8 @@ class OnlineJobAdapter {
                     db.prepare(`
                         UPDATE job_items 
                         SET original_path = ?, status = 'READY'
-                        WHERE job_id = ? AND item_index = ?
-                    `).run(staged.localPath, localJob.id, item.photoIndex || 1);
+                        WHERE job_id = ?
+                    `).run(staged.localPath, localJob.id);
 
                     stagedItems.push({
                         photoIndex: item.photoIndex || 1,

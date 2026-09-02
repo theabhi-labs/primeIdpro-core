@@ -154,20 +154,7 @@ class JobEngine {
         params.push(limit, offset);
 
         const rows = db.prepare(query).all(...params);
-        return rows.map(r => ({
-            id: r.id,
-            serverJobId: r.server_job_id,
-            orderId: r.order_id,
-            type: r.type,
-            source: r.source,
-            status: r.status,
-            processingStatus: r.processing_status,
-            printStatus: r.print_status,
-            syncStatus: r.sync_status,
-            itemCount: r.item_count,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at
-        }));
+        return rows.map(r => this.getJob(r.id));
     }
 
     updateJob(jobId, { status, processingStatus, printStatus, syncStatus, metadata } = {}) {

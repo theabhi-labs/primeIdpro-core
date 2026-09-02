@@ -1,22 +1,19 @@
+import logging
+from datetime import datetime
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-import time
-import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("primeidpro.http")
 
-class LoggingMiddleware(BaseHTTPMiddleware):
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
-        
-        response = await call_next(request)
-        
-        process_time = time.time() - start_time
-        logger.info(
-            f"{request.method} {request.url.path} - "
-            f"Status: {response.status_code} - "
-            f"Time: {process_time:.3f}s"
-        )
-        
-        response.headers["X-Process-Time"] = str(process_time)
+        start = datetime.now()
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            logger.exception(f"Unhandled error in {request.method} {request.url.path}: {exc}")
+            raise
+        elapsed = (datetime.now() - start).total_seconds()
+        logger.info(f"{request.method} {request.url.path} -> {response.status_code} ({elapsed:.3f}s)")
         return response

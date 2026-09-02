@@ -1,61 +1,41 @@
-from motor.motor_asyncio import AsyncIOMotorClient
-from beanie import init_beanie
-from app.core.config import settings
 import logging
+from motor.motor_asyncio import AsyncIOMotorClient
+from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("primeidpro.database")
+
 
 class Database:
     client: AsyncIOMotorClient = None
-    
+    db_name: str = settings.mongodb_db_name
+
     async def connect(self):
         try:
-            # MongoDB Atlas connection
-            connection_string = settings.mongodb_url
-            
-            logger.info(f"Connecting to MongoDB Atlas...")
-            
-            # Create client with proper options
+            logger.info(f"Connecting to MongoDB at {settings.mongodb_url}...")
             self.client = AsyncIOMotorClient(
-                connection_string,
-                serverSelectionTimeoutMS=5000,  # 5 second timeout
+                settings.mongodb_url,
+                serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
-                retryWrites=True,
-                w='majority'
             )
-            
-            # Test connection
-            await self.client.admin.command('ping')
-            logger.info(f"✅ Connected to MongoDB Atlas")
-            
-            # Initialize Beanie with models
-            from app.models.image import Image
-            from app.models.sheet import Sheet
-            from app.models.session import Session
-            
-            await init_beanie(
-                database=self.client[settings.mongodb_db_name],
-                document_models=[Image, Sheet, Session]
-            )
-            
-            logger.info(f"✅ Beanie initialized with database: {settings.mongodb_db_name}")
-            return True
-            
+            await self.client.admin.command("ping")
+            logger.info(f"✅ Connected to MongoDB ({self.db_name})")
+            return self.get_database()
         except Exception as e:
-            logger.error(f"❌ MongoDB connection error: {e}")
-            logger.warning("⚠️ Starting without database...")
+            logger.error(f"❌ MongoDB connection failed: {e}")
+            logger.warning("⚠️ Save/Project endpoints will return 503 until MongoDB is reachable")
             self.client = None
-            return False
-    
+            return None
+
     async def disconnect(self):
         if self.client:
             self.client.close()
-            logger.info("✅ Disconnected from MongoDB")
-    
-    async def get_database(self):
+            logger.info("Disconnected from MongoDB")
+            self.client = None
+
+    def get_database(self):
         if self.client:
-            return self.client[settings.mongodb_db_name]
+            return self.client[self.db_name]
         return None
 
-# Create database instance
+
 db = Database()

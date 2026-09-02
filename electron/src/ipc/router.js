@@ -92,6 +92,20 @@ function registerIpcHandlers() {
         }
     });
 
+    
+    ipcMain.handle("jobs:readImageBase64", async (event, filePath) => {
+        try {
+            const fs = require("fs");
+            if (!fs.existsSync(filePath)) return { success: false, error: "File not found" };
+            const buffer = await fs.promises.readFile(filePath);
+            const base64 = buffer.toString("base64");
+            const ext = filePath.endsWith(".png") ? "png" : filePath.endsWith(".webp") ? "webp" : "jpeg";
+            return { success: true, dataUrl: `data:image/${ext};base64,${base64}` };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle("jobs:listOnline", async () => {
         try {
             const jobs = jobEngine.listJobs({ source: "ONLINE" });
