@@ -5,6 +5,8 @@ import time
 import uuid
 import hashlib
 import logging
+import urllib.request
+import urllib.error
 from typing import Dict, Any, Optional
 from fastapi import HTTPException
 from app.core.config import APP_DIR
@@ -15,6 +17,11 @@ WALLET_FILE = os.path.join(APP_DIR, "processed", "license_wallet.json")
 DEFAULT_FREE_CREDITS = 20
 PASSPORT_COST = 2
 CARD_COST_PER_UNIT = 5
+
+CENTRAL_API_URL = os.environ.get(
+    "PRIMEIDPRO_CENTRAL_API",
+    "https://primeidpro-central-platform.onrender.com/api/v1"
+)
 
 
 def get_machine_hardware_id() -> str:
@@ -98,6 +105,8 @@ def _load_wallet() -> Dict[str, Any]:
         "isConnected": False,
         "connectedAccount": None,
         "licenseKey": None,
+        "deviceToken": None,
+        "centerCode": None,
         "tier": "UNCONNECTED",
         "createdAt": int(time.time()),
         "transactions": [],
@@ -125,6 +134,7 @@ def get_wallet_status() -> Dict[str, Any]:
         "connectedAccount": wallet.get("connectedAccount"),
         "licenseKey": wallet.get("licenseKey"),
         "tier": wallet.get("tier", "UNCONNECTED"),
+        "centerCode": wallet.get("centerCode"),
         "rates": {
             "passportPhotoPrint": PASSPORT_COST,
             "idCardPrintPerUnit": CARD_COST_PER_UNIT,
@@ -134,38 +144,88 @@ def get_wallet_status() -> Dict[str, Any]:
 
 
 def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
-    """Connects desktop app with primeidpro.online account and strictly binds to physical machine hardware."""
+    """
+    Connects desktop app with primeidpro.online account by authenticating directly
+    against the Central Server API and registering this physical machine hardware.
+    """
     if not account_id or not license_key:
-        raise HTTPException(status_code=400, detail="Account Email/ID and License Key are required.")
+        raise HTTPException(status_code=400, detail="Account Email/ID and Password are required.")
 
-    wallet = _load_wallet()
     machine_id = get_machine_hardware_id()
-    already_claimed = is_machine_welcome_claimed(machine_id)
+    device_name = os.environ.get("COMPUTERNAME", "Front Counter PC")
+    wallet = _load_wallet()
 
+    # 1. Authenticate with Remote Central Platform
+    remote_data = None
+    try:
+        req_url = f"{CENTRAL_API_URL}/devices/register"
+        payload = {
+            "email": account_id.strip(),
+            "password": license_key.strip(),
+            "installationId": machine_id,
+            "deviceName": device_name,
+            "appVersion": "1.0.0",
+            "osPlatform": sys.platform,
+        }
+        req = urllib.request.Request(
+            req_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "PrimeIDPro-Desktop/1.0.0"},
+        )
+        with urllib.request.urlopen(req, timeout=12) as res:
+            res_body = res.read().decode("utf-8")
+            parsed = json.loads(res_body)
+            if parsed.get("success"):
+                remote_data = parsed.get("data", {})
+    except urllib.error.HTTPError as e:
+        err_text = e.read().decode("utf-8")
+        logger.error(f"Central Auth HTTP Error {e.code}: {err_text}")
+        try:
+            err_json = json.loads(err_text)
+            msg = err_json.get("message") or "Authentication failed. Please check credentials."
+        except Exception:
+            msg = f"Server returned error {e.code}"
+        raise HTTPException(status_code=e.code, detail=msg)
+    except Exception as e:
+        logger.warning(f"Could not connect to central server (offline mode fallback): {e}")
+
+    # 2. Update Local Wallet State
     wallet["machineId"] = machine_id
     wallet["isConnected"] = True
     wallet["connectedAccount"] = account_id.strip()
     wallet["licenseKey"] = license_key.strip()
     wallet["tier"] = "WEB_CONNECTED"
 
-    # Anti-Abuse: One-time 20 Free Welcome Tokens per physical machine
-    if not already_claimed and wallet.get("credits", 0) == 0:
-        wallet["credits"] = DEFAULT_FREE_CREDITS
-        mark_machine_welcome_claimed(machine_id)
-        tx = {
-            "id": f"tx_{int(time.time())}_welcome",
-            "timestamp": int(time.time()),
-            "type": "CREDIT",
-            "description": f"Welcome Credits: Connected with {account_id.strip()} (Machine: {machine_id})",
-            "amount": DEFAULT_FREE_CREDITS,
-            "balanceAfter": DEFAULT_FREE_CREDITS,
-        }
-        wallet.setdefault("transactions", []).append(tx)
-        logger.info(f"🎉 One-Time Welcome Bonus awarded to Machine {machine_id} for account {account_id}")
-    elif already_claimed:
-        logger.info(f"ℹ️ Machine {machine_id} already claimed welcome bonus. Connecting account {account_id} with existing balance {wallet.get('credits', 0)}.")
+    if remote_data:
+        center = remote_data.get("center", {})
+        wallet["deviceToken"] = remote_data.get("deviceToken") or remote_data.get("token")
+        wallet["centerCode"] = center.get("centerCode")
+        remote_balance = center.get("walletBalance")
+        if remote_balance is not None and int(remote_balance) > 0:
+            wallet["credits"] = int(remote_balance)
+        else:
+            # Welcome starter credits
+            if wallet.get("credits", 0) == 0:
+                wallet["credits"] = DEFAULT_FREE_CREDITS
+    else:
+        # Fallback if offline
+        if wallet.get("credits", 0) == 0:
+            wallet["credits"] = DEFAULT_FREE_CREDITS
 
+    # Anti-abuse registration log
+    mark_machine_welcome_claimed(machine_id)
+    tx = {
+        "id": f"tx_{int(time.time())}_connect",
+        "timestamp": int(time.time()),
+        "type": "SYNC",
+        "description": f"Synced with PrimeIDPro.online: {account_id.strip()}",
+        "amount": 0,
+        "balanceAfter": wallet["credits"],
+    }
+    wallet.setdefault("transactions", []).append(tx)
     _save_wallet(wallet)
+
+    logger.info(f"✅ Desktop app bound to central platform for {account_id}. Balance: {wallet['credits']}")
     return get_wallet_status()
 
 
@@ -240,6 +300,7 @@ def disconnect_account() -> Dict[str, Any]:
     wallet["isConnected"] = False
     wallet["connectedAccount"] = None
     wallet["licenseKey"] = None
+    wallet["deviceToken"] = None
     wallet["tier"] = "UNCONNECTED"
     _save_wallet(wallet)
     return get_wallet_status()
