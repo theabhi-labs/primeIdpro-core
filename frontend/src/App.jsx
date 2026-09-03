@@ -38,7 +38,8 @@ import {
   Plus,
   Image as ImageIcon,
   Laptop,
-  Link2
+  Link2,
+  Smartphone
 } from 'lucide-react';
 
 function App() {
