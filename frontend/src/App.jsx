@@ -130,33 +130,69 @@ function App() {
   const handleLoadOnlineJob = async (job) => {
     try {
       if (!job) return;
+      setToast({ type: 'info', message: 'Loading customer photo for print...' });
+
       const rawJob = await window.primeIdPro.jobs.get(job.id);
       const items = rawJob?.job?.items || job.items || [];
       const item = items[0];
-      const filePath = item?.original_path;
+      let filePath = item?.original_path;
+      let dataUrl = null;
 
-      if (!filePath) {
-        setToast({ type: 'info', message: 'Downloading customer photo from cloud...' });
-        return;
+      // 1. Try reading from local staged file
+      if (filePath) {
+        try {
+          const res = await window.primeIdPro.jobs.readImageBase64(filePath);
+          if (res?.success && res?.dataUrl) {
+            dataUrl = res.dataUrl;
+          }
+        } catch (e) {
+          // fallback to remote fetch
+        }
       }
 
-      const res = await window.primeIdPro.jobs.readImageBase64(filePath);
-      if (!res?.success || !res?.dataUrl) {
-        throw new Error(res?.error || 'Could not read image file');
+      // 2. Fallback: Fetch directly from remote cloud URL if not yet staged
+      if (!dataUrl) {
+        const remoteUrl =
+          item?.downloadUrl ||
+          job.metadata?.rawCentralJob?.temporaryPhotoUrl ||
+          job.metadata?.rawCentralJob?.photoUrl;
+
+        if (!remoteUrl) {
+          throw new Error('Photo download URL not available in job metadata');
+        }
+
+        const resp = await fetch(remoteUrl);
+        if (!resp.ok) {
+          throw new Error(`Failed to download photo from cloud (HTTP ${resp.status})`);
+        }
+        const blob = await resp.blob();
+        dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
       }
 
-      // Convert base64 dataUrl to File
-      const arr = res.dataUrl.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
+      if (!dataUrl) {
+        throw new Error('Could not load customer photo data');
+      }
+
+      // Convert dataUrl to File
+      const arr = dataUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
       const bstr = atob(arr[1]);
       let n = bstr.length;
       const u8arr = new Uint8Array(n);
       while (n--) {
         u8arr[n] = bstr.charCodeAt(n);
       }
-      const file = new File([u8arr], `online_order_${job.id}.jpg`, { type: mime });
+      const file = new File([u8arr], `customer_order_${job.id}.jpg`, { type: mime });
 
-      handleUpload([file]);
+      // STRICTLY NORMAL PHOTO STUDIO MODE (No Vintage / No 4K Restore)
+      setRestoreVintageMode(false);
+      uploadPhotos([file], selectedCountry || 'india', false);
+
       if (job.metadata?.totalCopies) {
         updateSettings({ copies: Number(job.metadata.totalCopies) });
       }
@@ -169,7 +205,7 @@ function App() {
 
       setToast({
         type: 'success',
-        message: `Loaded walk-in order for ${job.metadata?.customerName || 'Customer'} (${job.metadata?.totalCopies || 8} Copies)!`,
+        message: `✨ Loaded Normal Photo for ${job.metadata?.customerName || 'Customer'} (${job.metadata?.totalCopies || 8} Copies)!`,
       });
     } catch (err) {
       setToast({ type: 'error', message: 'Failed to load online order: ' + err.message });
