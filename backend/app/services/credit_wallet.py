@@ -23,6 +23,8 @@ CENTRAL_API_URL = os.environ.get(
     "https://primeidpro-central-platform.onrender.com/api/v1"
 )
 
+_last_remote_sync_time = 0
+
 
 def get_machine_hardware_id() -> str:
     """Returns unique, immutable hardware machine ID based on Windows MachineGUID and hardware node."""
@@ -121,10 +123,54 @@ def _save_wallet(wallet: Dict[str, Any]):
         json.dump(wallet, f, indent=2)
 
 
+def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
+    """Syncs live token balance directly from primeidpro.online cloud database."""
+    global _last_remote_sync_time
+    now = time.time()
+    if not force and (now - _last_remote_sync_time) < 4:
+        return
+
+    account_id = wallet.get("connectedAccount")
+    if not wallet.get("isConnected") or not account_id:
+        return
+
+    _last_remote_sync_time = now
+    try:
+        machine_id = get_machine_hardware_id()
+        req_url = f"{CENTRAL_API_URL}/devices/sync-wallet"
+        payload = {
+            "email": account_id.strip(),
+            "installationId": machine_id
+        }
+        req = urllib.request.Request(
+            req_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "PrimeIDPro-Desktop/1.0.0"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as res:
+            res_body = res.read().decode("utf-8")
+            parsed = json.loads(res_body)
+            if parsed.get("success"):
+                data = parsed.get("data", {})
+                cloud_bal = data.get("walletBalance")
+                if cloud_bal is not None:
+                    wallet["credits"] = int(cloud_bal)
+                    if data.get("centerCode"):
+                        wallet["centerCode"] = data.get("centerCode")
+                    _save_wallet(wallet)
+                    logger.info(f"🔄 Live synced with PrimeIDPro.online: {cloud_bal} tokens for {account_id}")
+    except Exception as e:
+        logger.debug(f"Live balance sync check: {e}")
+
+
 def get_wallet_status() -> Dict[str, Any]:
     wallet = _load_wallet()
     machine_id = get_machine_hardware_id()
     already_claimed = is_machine_welcome_claimed(machine_id)
+
+    # Sync live tokens from primeidpro.online if connected
+    if wallet.get("isConnected"):
+        sync_cloud_wallet_balance(wallet)
 
     return {
         "machineId": machine_id,
@@ -247,6 +293,8 @@ def deduct_credits(action_type: str, count: int = 1, description: Optional[str] 
             },
         )
 
+    # Sync latest balance first
+    sync_cloud_wallet_balance(wallet, force=True)
     current_balance = wallet.get("credits", 0)
 
     if action_type == "passport":
