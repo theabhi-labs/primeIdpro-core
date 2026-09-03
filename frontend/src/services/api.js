@@ -114,11 +114,14 @@ export const withRetry = async (fn, { retries = 2, baseDelayMs = 800 } = {}) => 
 // ============================================
 
 // Upload single image
-export const uploadImage = async (file, countryCode = 'india') => {
-    console.log(` Uploading single file: ${file.name} (${file.size} bytes) for country: ${countryCode}`);
+export const uploadImage = async (file, countryCode = 'india', bgColor = 'white', restoreVintage = false) => {
+    console.log(` Uploading single file: ${file.name} (${file.size} bytes) for country: ${countryCode} (vintage_restore=${restoreVintage})`);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('country_code', countryCode);
+    formData.append('bg_color', bgColor);
+    formData.append('restore_vintage', restoreVintage ? 'true' : 'false');
+
     const response = await api.post('/upload/single', formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
@@ -130,20 +133,37 @@ export const uploadImage = async (file, countryCode = 'india') => {
 };
 
 // Upload multiple images
-export const uploadBatch = async (files, countryCode = 'india') => {
-    console.log(` Uploading batch of ${files.length} files for country: ${countryCode}`);
+export const uploadBatch = async (files, countryCode = 'india', bgColor = 'white', restoreVintage = false) => {
+    console.log(` Uploading batch of ${files.length} files for country: ${countryCode} (vintage_restore=${restoreVintage})`);
     const formData = new FormData();
     files.forEach(file => {
         formData.append('files', file);
     });
     formData.append('country_code', countryCode);
+    formData.append('bg_color', bgColor);
+    formData.append('restore_vintage', restoreVintage ? 'true' : 'false');
+
     const response = await api.post('/upload/batch', formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
         timeout: 120000,
     });
-    console.log(` Batch upload successful, ${response.data?.data?.count} images queued`);
+    console.log(` Batch upload successful, ${response.data?.data?.length || response.data?.data?.count} images queued`);
+    return response.data;
+};
+
+// Real-time 4K AI Restoration fine-tuning
+export const restore4kEnhance = async (imageId, { bgColor = 'white', clarityBoost = 1.40, denoiseLevel = 0.60, colorVibrance = 1.15, autoDeage = true } = {}) => {
+    console.log(`✨ Fine-tuning 4K AI Restoration for image: ${imageId}`);
+    const formData = new FormData();
+    formData.append('bg_color', bgColor);
+    formData.append('clarity_boost', clarityBoost);
+    formData.append('denoise_level', denoiseLevel);
+    formData.append('color_vibrance', colorVibrance);
+    formData.append('auto_deage', autoDeage ? 'true' : 'false');
+
+    const response = await api.post(`/process/restore-4k/${imageId}`, formData);
     return response.data;
 };
 
@@ -153,6 +173,7 @@ export const uploadFromUrl = async (url) => {
     const response = await api.post('/upload/url', { url });
     return response.data;
 };
+
 
 // ============================================
 // PROCESS ENDPOINTS

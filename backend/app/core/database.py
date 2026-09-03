@@ -14,8 +14,8 @@ class Database:
             logger.info(f"Connecting to MongoDB at {settings.mongodb_url}...")
             self.client = AsyncIOMotorClient(
                 settings.mongodb_url,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000,
             )
             await self.client.admin.command("ping")
             logger.info(f"✅ Connected to MongoDB ({self.db_name})")

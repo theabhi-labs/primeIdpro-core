@@ -1,0 +1,34 @@
+{
+  "id": "corporate-id-dark",
+  "name": "Corporate Employee Dark",
+  "category": "employee",
+  "version": "1.0.0",
+  "description": "Premium dark obsidian theme for corporate staff & employees with vertical badge layout and QR code.",
+  "size": {
+    "width": 53.98,
+    "height": 85.60,
+    "unit": "mm",
+    "orientation": "vertical"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    { "id": "name", "label": "Full Name", "type": "text", "required": true, "formatting": "uppercase" },
+    { "id": "employeeId", "label": "Employee ID", "type": "text", "required": true },
+    { "id": "designation", "label": "Designation", "type": "text", "required": true },
+    { "id": "department", "label": "Department", "type": "text", "required": false },
+    { "id": "bloodGroup", "label": "Blood Group", "type": "text", "required": false },
+    { "id": "mobile", "label": "Phone Number", "type": "phone", "required": false },
+    { "id": "email", "label": "Work Email", "type": "email", "required": false },
+    { "id": "issueDate", "label": "Issue Date", "type": "date", "required": false },
+    { "id": "expiryDate", "label": "Valid Till", "type": "date", "required": false }
+  ],
+  "imageSlots": [
+    { "id": "photo", "label": "Employee Photo", "required": true, "aspectRatio": "35x45" },
+    { "id": "organization.logo", "label": "Company Logo", "required": false }
+  ],
+  "qr": {
+    "enabled": true,
+    "sourceField": "employeeId",
+    "side": "back"
+  }
+}

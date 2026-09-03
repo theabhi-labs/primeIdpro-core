@@ -1,0 +1,33 @@
+{
+  "id": "university-classic-gold",
+  "name": "University Classic Gold",
+  "category": "college",
+  "version": "1.0.0",
+  "description": "Prestigious navy & gold card design for universities, colleges, and polytechnics.",
+  "size": {
+    "width": 85.60,
+    "height": 53.98,
+    "unit": "mm",
+    "orientation": "horizontal"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    { "id": "name", "label": "Student Name", "type": "text", "required": true, "formatting": "uppercase" },
+    { "id": "registrationNumber", "label": "Reg / Roll No", "type": "text", "required": true },
+    { "id": "course", "label": "Course / Degree", "type": "text", "required": true },
+    { "id": "branch", "label": "Department / Branch", "type": "text", "required": false },
+    { "id": "dob", "label": "Date of Birth", "type": "date", "required": false },
+    { "id": "mobile", "label": "Contact Number", "type": "phone", "required": false },
+    { "id": "validTill", "label": "Valid Upto", "type": "text", "required": false }
+  ],
+  "imageSlots": [
+    { "id": "photo", "label": "Student Photo", "required": true, "aspectRatio": "35x45" },
+    { "id": "organization.logo", "label": "University Crest", "required": false },
+    { "id": "organization.signature", "label": "Dean / Registrar Signature", "required": false }
+  ],
+  "qr": {
+    "enabled": true,
+    "sourceField": "registrationNumber",
+    "side": "back"
+  }
+}

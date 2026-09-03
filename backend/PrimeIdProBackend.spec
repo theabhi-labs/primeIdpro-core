@@ -1,22 +1,33 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [('app', 'app'), ('models', 'models')]
 binaries = []
-hiddenimports = ['motor.motor_asyncio', 'pymongo', 'beanie']
-tmp_ret = collect_all('motor')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pymongo')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('beanie')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('cv2')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = [
+    'motor.motor_asyncio', 'pymongo', 'beanie',
+    'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto',
+    'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto',
+    'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto',
+    'uvicorn.lifespans', 'uvicorn.lifespans.auto',
+    'app', 'app.main', 'app.core', 'app.core.config', 'app.core.database',
+    'app.core.cascade', 'app.core.state', 'app.middleware', 'app.api',
+    'app.services', 'pydantic_settings'
+]
 
+for pkg in ['motor', 'pymongo', 'beanie', 'cv2', 'mediapipe', 'rembg', 'uvicorn', 'onnxruntime', 'fastapi', 'pydantic', 'pydantic_settings']:
+    try:
+        tmp_ret = collect_all(pkg)
+        datas += tmp_ret[0]
+        binaries += tmp_ret[1]
+        hiddenimports += tmp_ret[2]
+    except Exception as e:
+        pass
 
 a = Analysis(
-    ['app\\main.py'],
-    pathex=[],
+    ['run_server.py'],
+    pathex=['.'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -38,7 +49,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -51,7 +62,8 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='PrimeIdProBackend',
 )
+

@@ -9,7 +9,12 @@ from app.core.config import PROCESSED_DIR
 from app.core.state import uploaded_images, processing_status
 from app.services.background.remover import remove_background_lightweight
 from app.services.face_detection.detector import align_and_crop_face
-from app.services.enhancement.enhancer import flatten_onto_bg, refine_edges_and_halo, enhance_image_quality
+from app.services.enhancement.enhancer import (
+    flatten_onto_bg,
+    refine_edges_and_halo,
+    enhance_image_quality,
+    restore_and_enhance_vintage_photo,
+)
 from app.services.enhancement.validator import verify_passport_quality
 from app.utils.color import validate_and_normalize_color
 
@@ -48,15 +53,13 @@ def detect_face_crop(
         alt_cascade=alt_cascade
     )
 
-    if metrics.get("center_fallback"):
-        raise HTTPException(
-            status_code=400,
-            detail="No face detected. Please upload a clear front-facing photo."
-        )
-
-    # Edge Matting and Anti-Halo
+    # Edge Matting, Defringing and Anti-Halo
     refined_np = refine_edges_and_halo(np.array(transparent_crop))
-    refined_rgba = Image.fromarray(refined_np, mode="RGBA")
+    
+    # Natural lighting enhancement applied directly to the subject BEFORE background flattening
+    rgb_only = enhance_image_quality(refined_np[:, :, :3])
+    subject_rgba = np.dstack([rgb_only, refined_np[:, :, 3]])
+    refined_rgba = Image.fromarray(subject_rgba, mode="RGBA")
 
     # Flatten on Background
     flat = flatten_onto_bg(refined_rgba, bg_color, refined_rgba.size)
@@ -69,20 +72,23 @@ def detect_face_crop(
         face_mesh=face_mesh
     )
 
-    # Natural lighting enhancement
-    enhanced_np = enhance_image_quality(np.array(flat.convert("RGB")))
-    enhanced_flat = Image.fromarray(enhanced_np, mode="RGB")
-
     # Save with embedded 300 DPI metadata
     refined_rgba.save(transparent_output_path, "PNG", dpi=(dpi, dpi))
-    enhanced_flat.save(output_path, "PNG", dpi=(dpi, dpi))
+    flat.save(output_path, "PNG", dpi=(dpi, dpi))
     return is_valid, v_log, suggestions
+
+
+from app.services.enhancement.restorer import run_4k_vintage_restoration
 
 
 async def process_image_async(
     image_id: str,
     country_code: str = "india",
     bg_color: str = "white",
+    restore_vintage: bool = False,
+    clarity_boost: float = 1.40,
+    denoise_level: float = 0.60,
+    color_vibrance: float = 1.15,
     face_mesh=None,
     face_cascade=None,
     alt_cascade=None
@@ -92,6 +98,9 @@ async def process_image_async(
         processing_status[image_id] = {"status": "processing", "progress": 10}
         original_path = uploaded_images[image_id]["original_path"]
 
+        final_path = os.path.join(PROCESSED_DIR, f"{image_id}_final.png")
+        transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_transparent.png")
+
         processing_status[image_id]["progress"] = 30
         nobg_path = os.path.join(PROCESSED_DIR, f"{image_id}_nobg.png")
         success = await asyncio.to_thread(remove_background_lightweight, original_path, nobg_path)
@@ -99,10 +108,8 @@ async def process_image_async(
             raise Exception("Background removal failed completely")
 
         processing_status[image_id]["progress"] = 60
-        final_path = os.path.join(PROCESSED_DIR, f"{image_id}_final.png")
-        transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_transparent.png")
 
-        # Runs crop, alignment, edge quality, enhancements, and quality verification
+        # Runs crop, alignment, defringing, edge quality, and biometric verification
         is_valid, v_log, suggestions = await asyncio.to_thread(
             detect_face_crop,
             nobg_path,
@@ -116,8 +123,6 @@ async def process_image_async(
             alt_cascade
         )
 
-        processing_status[image_id]["progress"] = 90
-
         # Clean up temporary background-removed file
         if os.path.exists(nobg_path):
             try:
@@ -125,10 +130,31 @@ async def process_image_async(
             except Exception:
                 pass
 
+        if restore_vintage:
+            # Apply 4K Super-Resolution & Vintage De-aging directly to the transparent subject
+            def _apply_4k():
+                t_img = Image.open(transparent_path).convert("RGBA")
+                vivid_np = restore_and_enhance_vintage_photo(
+                    np.array(t_img),
+                    clarity_boost=clarity_boost,
+                    denoise_level=denoise_level,
+                    color_vibrance=color_vibrance,
+                    auto_deage=True
+                )
+                vivid_rgba = Image.fromarray(vivid_np, mode="RGBA")
+                vivid_rgba.save(transparent_path, "PNG", dpi=(300, 300))
+                flat_img = flatten_onto_bg(vivid_rgba, bg_color, vivid_rgba.size)
+                flat_img.save(final_path, "PNG", dpi=(300, 300))
+
+            await asyncio.to_thread(_apply_4k)
+
+        processing_status[image_id]["progress"] = 90
+
         uploaded_images[image_id]["processed_path"] = final_path
         uploaded_images[image_id]["transparent_path"] = transparent_path
         uploaded_images[image_id]["processed_url"] = f"/processed/{image_id}_final.png"
         uploaded_images[image_id]["transparent_url"] = f"/processed/{image_id}_transparent.png"
+        uploaded_images[image_id]["is_vintage_restored"] = restore_vintage
 
         processing_status[image_id] = {
             "status": "completed",
@@ -136,6 +162,7 @@ async def process_image_async(
             "processed_url": f"/processed/{image_id}_final.png",
             "transparent_url": f"/processed/{image_id}_transparent.png",
             "bg_color": bg_color,
+            "is_vintage_restored": restore_vintage,
             "quality_check": {
                 "valid": is_valid,
                 "log": v_log,
@@ -143,6 +170,7 @@ async def process_image_async(
             },
         }
     except Exception as e:
+
         logger.error(f"Error processing {image_id}: {e}")
         processing_status[image_id] = {"status": "failed", "progress": 0, "error": str(e)}
 

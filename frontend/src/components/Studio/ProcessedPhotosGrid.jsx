@@ -1,11 +1,34 @@
 import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Check, Square, MousePointer2, Layers } from 'lucide-react';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Check,
+  Square,
+  MousePointer2,
+  Layers,
+  Sparkles,
+  Loader2,
+  AlertTriangle,
+  RefreshCw,
+  Zap,
+} from 'lucide-react';
 
-const ProcessedPhotosGrid = ({ photos, onEdit, onDelete, onSelectForCopy, onSelectMultiple }) => {
+const ProcessedPhotosGrid = ({
+  photos = [],
+  uploads = [],
+  onEdit,
+  onDelete,
+  onSelectForCopy,
+  onSelectMultiple,
+}) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
 
-  // LOGIC PRESERVED: Same as your original code
+  // All items to display: combined active uploads + completed photos
+  const displayItems = uploads.length > 0 ? uploads : photos;
+  const completedPhotos = displayItems.filter((p) => p.status === 'completed' && p.processedUrl);
+
   const toggleSelect = (id) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) newSet.delete(id);
@@ -15,44 +38,44 @@ const ProcessedPhotosGrid = ({ photos, onEdit, onDelete, onSelectForCopy, onSele
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === photos.length) {
+    if (selectedIds.size === completedPhotos.length) {
       setSelectedIds(new Set());
       onSelectMultiple?.([]);
     } else {
-      const allIds = photos.map(p => p.id);
+      const allIds = completedPhotos.map((p) => p.id);
       setSelectedIds(new Set(allIds));
       onSelectMultiple?.(allIds);
     }
   };
 
-  if (photos.length === 0) {
+  if (displayItems.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-900/20">
+      <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-800 rounded-3xl bg-slate-900/20">
         <Layers className="w-12 h-12 text-slate-700 mb-4" />
-        <p className="text-slate-500 font-medium tracking-wide">No processed photos in your gallery</p>
+        <p className="text-slate-500 font-medium tracking-wide text-xs">No processed photos in your gallery</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4">
+    <div className="w-full max-w-6xl mx-auto px-2">
       {/* Control Bar */}
-      <div className="mb-8 flex flex-wrap gap-4 justify-between items-center bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 backdrop-blur-sm">
+      <div className="mb-6 flex flex-wrap gap-4 justify-between items-center bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm text-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSelectMode(!selectMode)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
-              selectMode 
-                ? 'bg-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)]' 
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 cursor-pointer ${
+              selectMode
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.4)]'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            <MousePointer2 size={16} />
-            {selectMode ? 'Cancel Selection' : 'Batch Select'}
+            <MousePointer2 size={14} />
+            <span>{selectMode ? 'Cancel Selection' : 'Batch Select'}</span>
           </button>
-          
+
           {selectMode && (
-            <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full border border-cyan-400/20">
+            <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950 px-3 py-1 rounded-full border border-cyan-800">
               {selectedIds.size} Selected
             </span>
           )}
@@ -61,77 +84,163 @@ const ProcessedPhotosGrid = ({ photos, onEdit, onDelete, onSelectForCopy, onSele
         {selectMode && (
           <button
             onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-800/50 text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-700 transition-all border border-slate-700"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-700 transition-all border border-slate-700 cursor-pointer"
           >
-            {selectedIds.size === photos.length ? <Check size={16} className="text-cyan-400" /> : <Square size={16} />}
-            {selectedIds.size === photos.length ? 'Deselect All' : 'Select All'}
+            {selectedIds.size === completedPhotos.length ? (
+              <Check size={14} className="text-cyan-400 font-bold" />
+            ) : (
+              <Square size={14} />
+            )}
+            <span>{selectedIds.size === completedPhotos.length ? 'Deselect All' : 'Select All'}</span>
           </button>
         )}
       </div>
 
       {/* Grid Display */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
-        {photos.map((photo, idx) => {
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+        {displayItems.map((photo, idx) => {
           const isSelected = selectedIds.has(photo.id);
+          const isProcessing = photo.status === 'processing' || photo.status === 'uploading' || photo.status === 'pending';
+          const isFailed = photo.status === 'failed';
+
           return (
-            <div 
-              key={photo.id} 
-              className={`group relative rounded-3xl overflow-hidden bg-slate-900 border-2 transition-all duration-500 ${
-                isSelected && selectMode ? 'border-cyan-500 scale-[0.98]' : 'border-slate-800 hover:border-slate-600 shadow-2xl'
+            <div
+              key={photo.id || idx}
+              className={`group relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 ${
+                isSelected && selectMode
+                  ? 'border-cyan-500 scale-[0.98]'
+                  : isProcessing
+                  ? 'border-cyan-500/50 shadow-lg shadow-cyan-950/40'
+                  : isFailed
+                  ? 'border-rose-500/50'
+                  : 'border-slate-800 hover:border-slate-700 shadow-xl'
               }`}
             >
               {/* Selection Checkbox Overlay */}
-              {selectMode && (
+              {selectMode && !isProcessing && !isFailed && (
                 <div className="absolute top-3 left-3 z-30">
-                  <div 
+                  <div
                     onClick={() => toggleSelect(photo.id)}
                     className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center cursor-pointer transition-all ${
-                      isSelected ? 'bg-cyan-500 border-cyan-500' : 'bg-black/40 border-white/30'
+                      isSelected ? 'bg-cyan-500 border-cyan-500' : 'bg-black/60 border-white/40'
                     }`}
                   >
-                    {isSelected && <Check size={14} className="text-white font-bold" />}
+                    {isSelected && <Check size={14} className="text-slate-950 font-bold" />}
                   </div>
                 </div>
               )}
 
-              {/* Image Container */}
-              <div className="relative aspect-[3/4] overflow-hidden">
-                <img
-                  src={photo.processedUrl}
-                  alt="Passport ID"
-                  className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${
-                    isSelected && selectMode ? 'opacity-50' : 'opacity-100'
-                  }`}
-                />
-                
-                {/* AI Overlay Badge */}
-                <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-md text-[10px] text-cyan-400 px-2 py-1 rounded-md border border-cyan-400/20 font-mono">
-                  ID #{idx + 1}
-                </div>
+              {/* Image Viewport */}
+              <div className="relative aspect-[3/4] overflow-hidden bg-slate-900 flex items-center justify-center">
+                {/* 1. COMPLETED PHOTO */}
+                {!isProcessing && !isFailed && (
+                  <img
+                    src={photo.processedUrl || photo.preview}
+                    alt="Passport ID"
+                    className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                      isSelected && selectMode ? 'opacity-50' : 'opacity-100'
+                    }`}
+                  />
+                )}
 
-                {/* Hover Action Menu (Hidden in Select Mode) */}
-                {!selectMode && (
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end justify-center pb-6 gap-3">
+                {/* 2. PROCESSING STATE (LIVE VISUAL PIPELINE) */}
+                {isProcessing && (
+                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center z-20">
+                    {photo.preview && (
+                      <img
+                        src={photo.preview}
+                        alt="Original Upload"
+                        className="w-16 h-16 rounded-2xl object-cover opacity-40 mb-3 border border-slate-700"
+                      />
+                    )}
+
+                    <div className="relative mb-3">
+                      <Loader2 size={32} className="text-cyan-400 animate-spin" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Zap size={13} className="text-amber-400 animate-pulse" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-white tracking-wide">
+                        {photo.isVintageRestored ? '✨ 4K AI Restoring...' : 'AI Processing...'}
+                      </p>
+                      <p className="text-[10px] text-cyan-400 font-mono font-semibold">
+                        {(photo.progress || 0) < 35
+                          ? '🔍 Face & Subject Detection'
+                          : (photo.progress || 0) < 70
+                          ? '🧼 Background Matting'
+                          : '✨ 4K Super-Resolution'}
+                      </p>
+                    </div>
+
+                    {/* Progress Track */}
+                    <div className="w-full max-w-[120px] h-1.5 bg-slate-800 rounded-full overflow-hidden mt-3">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.max(15, photo.progress || 20)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. FAILED STATE */}
+                {isFailed && (
+                  <div className="absolute inset-0 bg-rose-950/60 p-4 flex flex-col items-center justify-center text-center text-xs text-rose-200 z-20">
+                    <AlertTriangle size={28} className="text-rose-400 mb-2" />
+                    <p className="font-bold text-white mb-1">Processing Failed</p>
+                    <p className="text-[10px] text-rose-300/80 mb-3 line-clamp-2">
+                      {photo.error || 'Could not detect face.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(photo.id)}
+                      className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-[11px] font-bold transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
+                {/* AI Overlay Badge & 4K Tag */}
+                {!isProcessing && !isFailed && (
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-20">
+                    {photo.isVintageRestored && (
+                      <span className="bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 px-2 py-0.5 rounded-md font-black text-[9px] uppercase tracking-wider shadow-sm flex items-center gap-1">
+                        <Sparkles size={10} />
+                        4K Restored
+                      </span>
+                    )}
+                    <div className="bg-black/60 backdrop-blur-md text-[10px] text-cyan-400 px-2 py-0.5 rounded-md border border-cyan-400/30 font-mono font-bold">
+                      ID #{idx + 1}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hover Action Menu (Hidden in Select Mode & Processing) */}
+                {!selectMode && !isProcessing && !isFailed && (
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-slate-950/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end justify-center pb-5 gap-2 px-3 z-30">
                     <button
                       onClick={() => onSelectForCopy(photo)}
-                      className="p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl hover:bg-cyan-500 hover:text-white hover:border-cyan-400 transition-all text-slate-200"
-                      title="Create Copies"
+                      className="p-2.5 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-xl hover:bg-cyan-500 hover:text-slate-950 hover:border-cyan-400 transition-all text-slate-200 cursor-pointer"
+                      title="Create Copies for Print"
                     >
-                      <Plus size={18} />
+                      <Plus size={16} />
                     </button>
                     <button
                       onClick={() => onEdit(photo)}
-                      className="p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl hover:bg-blue-600 hover:text-white hover:border-blue-400 transition-all text-slate-200"
-                      title="Fine Tune"
+                      className="p-2.5 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-xl hover:bg-cyan-500 hover:text-slate-950 hover:border-cyan-400 transition-all text-slate-200 flex items-center gap-1 text-xs font-bold cursor-pointer"
+                      title="4K AI Restore & Fine Tune"
                     >
-                      <Edit2 size={18} />
+                      <Sparkles size={15} className="text-amber-400" />
+                      <span>4K Edit</span>
                     </button>
                     <button
                       onClick={() => onDelete(photo.id)}
-                      className="p-3 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl hover:bg-red-500/80 hover:text-white hover:border-red-400 transition-all text-slate-200"
-                      title="Discard"
+                      className="p-2.5 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-xl hover:bg-rose-600 hover:text-white hover:border-rose-400 transition-all text-slate-300 cursor-pointer"
+                      title="Delete"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 )}

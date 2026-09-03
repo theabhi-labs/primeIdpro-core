@@ -1,3 +1,6 @@
+import os
+import sys
+import shutil
 import logging
 import cv2
 import numpy as np
@@ -7,31 +10,80 @@ from app.core.cascade import get_cv2_data_path
 logger = logging.getLogger("primeidpro.background")
 
 
+_cached_rembg_sessions = {}
+
+
+def _ensure_u2net_home():
+    """Ensure U2NET_HOME points to bundled models folder and ~/.u2net is populated for 100% offline usage on any PC."""
+    candidates = []
+    if hasattr(sys, "_MEIPASS"):
+        candidates.append(os.path.join(sys._MEIPASS, "models"))
+    exe_dir = os.path.dirname(sys.executable)
+    candidates.append(os.path.join(exe_dir, "models"))
+    candidates.append(os.path.join(exe_dir, "_internal", "models"))
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    candidates.append(os.path.join(backend_dir, "models"))
+    candidates.append(os.path.join(backend_dir, "backend", "models"))
+
+    found_models_dir = None
+    for cand in candidates:
+        if os.path.isdir(cand) and any(f.endswith(".onnx") for f in os.listdir(cand)):
+            found_models_dir = cand
+            break
+
+    if found_models_dir:
+        os.environ["U2NET_HOME"] = found_models_dir
+        logger.info(f"Using bundled models from U2NET_HOME={found_models_dir}")
+        user_u2net = os.path.expanduser("~/.u2net")
+        try:
+            os.makedirs(user_u2net, exist_ok=True)
+            for fname in os.listdir(found_models_dir):
+                if fname.endswith(".onnx"):
+                    dst = os.path.join(user_u2net, fname)
+                    src = os.path.join(found_models_dir, fname)
+                    if not os.path.exists(dst) or os.path.getsize(dst) != os.path.getsize(src):
+                        shutil.copy2(src, dst)
+        except Exception as e:
+            logger.warning(f"Could not copy models to ~/.u2net: {e}")
+
+
 def remove_background_lightweight(input_path: str, output_path: str) -> bool:
     """
     Remove background using rembg (AI) or GrabCut with clean alpha preservation.
     Preserves hair, beard, clothes, and body edges without artificial clipping.
     """
     rembg_success = False
-    for model_name in ["u2net", "u2netp"]:
-        try:
-            from rembg import remove, new_session
-            session = new_session(model_name)
-            pil_input = Image.open(input_path)
-            output_img = remove(pil_input, session=session)
-            output_img.save(output_path, "PNG")
 
-            # Validate alpha channel
-            check = Image.open(output_path)
-            if check.mode == "RGBA":
-                alpha = np.array(check.split()[-1])
-                if (alpha < 250).sum() > (alpha.size * 0.02):
-                    rembg_success = True
-                    logger.info(f"✅ rembg ({model_name}) succeeded")
-                    break
-        except Exception as e:
-            logger.warning(f"rembg ({model_name}) warning: {e}")
-            continue
+    try:
+        _ensure_u2net_home()
+        import rembg  # type: ignore
+        remove_func = getattr(rembg, "remove", None)
+        new_session_func = getattr(rembg, "new_session", None)
+
+        if callable(remove_func) and callable(new_session_func):
+            for model_name in ["isnet-general-use", "u2netp"]:
+                try:
+                    if model_name not in _cached_rembg_sessions:
+                        _cached_rembg_sessions[model_name] = new_session_func(model_name)
+                    session = _cached_rembg_sessions[model_name]
+
+                    pil_input = Image.open(input_path)
+                    output_img = remove_func(pil_input, session=session, post_process_mask=True)
+                    output_img.save(output_path, "PNG")
+
+                    # Validate alpha channel
+                    check = Image.open(output_path)
+                    if check.mode == "RGBA":
+                        alpha = np.array(check.split()[-1])
+                        if (alpha < 250).sum() > (alpha.size * 0.02):
+                            rembg_success = True
+                            logger.info(f"✅ rembg ({model_name}) succeeded with post_process_mask")
+                            break
+                except Exception as e:
+                    logger.warning(f"rembg ({model_name}) warning: {e}")
+                    continue
+    except Exception as err:
+        logger.warning(f"rembg lazy import failed: {err}")
 
     if not rembg_success:
         logger.info("Falling back to GrabCut with face detection")

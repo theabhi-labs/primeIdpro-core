@@ -1,0 +1,36 @@
+{
+  "id": "school-modern-blue",
+  "name": "School Modern Blue",
+  "category": "school",
+  "version": "1.0.0",
+  "description": "Modern high-contrast blue & cyan ID card for schools with front/back, QR code, and student metadata.",
+  "size": {
+    "width": 85.60,
+    "height": 53.98,
+    "unit": "mm",
+    "orientation": "horizontal"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    { "id": "name", "label": "Student Name", "type": "text", "required": true, "formatting": "uppercase" },
+    { "id": "rollNumber", "label": "Roll Number", "type": "text", "required": true },
+    { "id": "class", "label": "Class / Grade", "type": "text", "required": true },
+    { "id": "section", "label": "Section", "type": "text", "required": false },
+    { "id": "fatherName", "label": "Father's Name", "type": "text", "required": false },
+    { "id": "dob", "label": "Date of Birth", "type": "date", "required": false },
+    { "id": "bloodGroup", "label": "Blood Group", "type": "text", "required": false },
+    { "id": "mobile", "label": "Emergency Mobile", "type": "phone", "required": false },
+    { "id": "address", "label": "Residential Address", "type": "text", "required": false },
+    { "id": "admissionNo", "label": "Admission No", "type": "text", "required": false }
+  ],
+  "imageSlots": [
+    { "id": "photo", "label": "Student Photo", "required": true, "aspectRatio": "35x45" },
+    { "id": "organization.logo", "label": "School Logo", "required": false },
+    { "id": "organization.signature", "label": "Principal Signature", "required": false }
+  ],
+  "qr": {
+    "enabled": true,
+    "sourceField": "rollNumber",
+    "side": "back"
+  }
+}

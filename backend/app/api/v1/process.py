@@ -9,6 +9,12 @@ from app.services.pipeline import recolor_image_logic
 router = APIRouter(prefix="/process", tags=["Process"])
 
 
+from app.services.enhancement.enhancer import flatten_onto_bg, restore_and_enhance_vintage_photo
+from app.utils.color import validate_and_normalize_color
+from PIL import Image
+import numpy as np
+import time
+
 @router.post("/recolor/{image_id}")
 async def recolor_image(image_id: str, bg_color: str = Form(...)):
     """
@@ -17,6 +23,66 @@ async def recolor_image(image_id: str, bg_color: str = Form(...)):
     """
     res = await recolor_image_logic(image_id, bg_color)
     return {"success": True, "data": res}
+
+
+@router.post("/restore-4k/{image_id}")
+async def restore_4k_enhancement(
+    image_id: str,
+    bg_color: str = Form("white"),
+    clarity_boost: float = Form(1.40),
+    denoise_level: float = Form(0.60),
+    color_vibrance: float = Form(1.15),
+    auto_deage: bool = Form(True)
+):
+    """
+    Applies real-time 4K AI Super-Resolution, Denoising, and Vintage De-aging
+    to an existing image asset.
+    """
+    if image_id not in uploaded_images:
+        raise HTTPException(404, "Image not found")
+
+    transparent_path = uploaded_images[image_id].get("transparent_path")
+    if not transparent_path or not os.path.exists(transparent_path):
+        raise HTTPException(409, "Transparent asset not ready")
+
+    norm_bg = validate_and_normalize_color(bg_color)
+    rgba = Image.open(transparent_path).convert("RGBA")
+
+    # Enhance transparent RGBA subject directly to prevent background color flattening
+    rgba_np = np.array(rgba)
+    vivid_rgba_np = restore_and_enhance_vintage_photo(
+        rgba_np,
+        clarity_boost=float(clarity_boost),
+        denoise_level=float(denoise_level),
+        color_vibrance=float(color_vibrance),
+        auto_deage=bool(auto_deage)
+    )
+    vivid_rgba = Image.fromarray(vivid_rgba_np, "RGBA")
+    vivid_rgba.save(transparent_path, "PNG", dpi=(300, 300))
+
+    # Composite vivid subject onto chosen background
+    flat_rgb = flatten_onto_bg(vivid_rgba, norm_bg, vivid_rgba.size)
+    final_path = uploaded_images[image_id]["processed_path"]
+    flat_rgb.save(final_path, "PNG", dpi=(300, 300))
+
+
+    timestamp = int(time.time())
+    processed_url = f"/processed/{image_id}_final.png?t={timestamp}"
+    uploaded_images[image_id]["processed_url"] = processed_url
+    uploaded_images[image_id]["is_vintage_restored"] = True
+
+    return {
+        "success": True,
+        "data": {
+            "image_id": image_id,
+            "processed_url": processed_url,
+            "clarity_boost": clarity_boost,
+            "denoise_level": denoise_level,
+            "color_vibrance": color_vibrance,
+            "message": "AI 4K Super-Resolution & Vintage Restoration applied successfully!"
+        }
+    }
+
 
 
 @router.get("/status/{image_id}")

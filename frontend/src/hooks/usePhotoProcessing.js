@@ -23,7 +23,7 @@ const verifyImageLoad = (url, timeout = 10000) => {
             clearTimeout(timer);
             reject(new Error(`Failed to load image: ${url}`));
         };
-        img.src = url + '?t=' + Date.now();
+        img.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
     });
 };
 
@@ -38,7 +38,7 @@ export default function usePhotoProcessing() {
     const [uploads, setUploads] = useState([]);
     const [processedPhotos, setProcessedPhotos] = useState([]);
 
-    const uploadPhotos = async (files, countryCode = 'IN') => {
+    const uploadPhotos = async (files, countryCode = 'IN', restoreVintage = false) => {
         const newUploads = files.map(file => ({
             id: crypto.randomUUID(),
             file,
@@ -47,16 +47,17 @@ export default function usePhotoProcessing() {
             progress: 0,
             error: null,
             processedUrl: null,
-            transparentUrl: null,   // NEW: background-free reusable asset
-            bgColor: null,          // NEW: last color the user chose, for print
+            transparentUrl: null,
+            bgColor: null,
             serverId: null,
+            isVintageRestored: restoreVintage,
         }));
         setUploads(prev => [...prev, ...newUploads]);
 
         for (const upload of newUploads) {
             try {
                 updateStatus(upload.id, { status: 'uploading', progress: 10 });
-                const uploadRes = await uploadImage(upload.file, countryCode);
+                const uploadRes = await uploadImage(upload.file, countryCode, 'white', restoreVintage);
 
                 const imageId = uploadRes.data?.image_id || uploadRes.image_id;
                 if (!imageId) throw new Error('No image ID in upload response');
@@ -70,6 +71,7 @@ export default function usePhotoProcessing() {
                     progress: 100,
                     processedUrl: finalUrl,
                     transparentUrl: transparentUrl,
+                    isVintageRestored: restoreVintage,
                 });
             } catch (err) {
                 updateStatus(upload.id, {
@@ -95,17 +97,10 @@ export default function usePhotoProcessing() {
                 }
 
                 if (statusData.status === 'completed') {
-                    // Different backend versions have used different field
-                    // names for the final image — check the ones we know of.
-                    const rawProcessed =
-                        statusData.processed_url || statusData.passport_url;
+                    const rawProcessed = statusData.processed_url || statusData.passport_url;
                     if (!rawProcessed) throw new Error('No processed/passport url in response');
 
-                    // NEW: the reusable, background-free asset. Also check
-                    // both field names that have been used across backend
-                    // versions so this doesn't silently stay null.
-                    const rawTransparent =
-                        statusData.transparent_url || statusData.bg_removed_transparent_url;
+                    const rawTransparent = statusData.transparent_url || statusData.bg_removed_transparent_url;
 
                     const fullUrl = rawProcessed.startsWith('data:image')
                         ? rawProcessed
@@ -118,7 +113,7 @@ export default function usePhotoProcessing() {
                     throw new Error(statusData.error || 'Processing failed');
                 }
             } catch (err) {
-                if (err.message.includes('Failed to load image')) {
+                if (err.message.includes('Failed to load image') || err.message.includes('Processing failed') || (err.message && !err.message.includes('Network Error'))) {
                     throw err;
                 }
             }
@@ -140,8 +135,6 @@ export default function usePhotoProcessing() {
         if (photo?.preview) URL.revokeObjectURL(photo.preview);
     };
 
-    // NEW: now also accepts bgColor so the chosen studio color survives
-    // from the editor all the way through to printing.
     const updatePhotoUrl = (id, newUrl, bgColor = null) => {
         setUploads(prev => prev.map(p =>
             p.id === id ? { ...p, processedUrl: newUrl, bgColor, editedVersion: true } : p
@@ -153,70 +146,11 @@ export default function usePhotoProcessing() {
         setProcessedPhotos(completed);
     }, [uploads]);
 
-    
-    // AUTO_INBOUND_CLOUD_SYNC: Listen to Inbound Online Jobs from Central Cloud
-    useEffect(() => {
-        if (!window.primeIdPro?.jobs?.listOnline) return;
-
-        const checkOnlineJobs = async () => {
-            try {
-                const res = await window.primeIdPro.jobs.listOnline();
-                if (res?.success && Array.isArray(res.jobs) && res.jobs.length > 0) {
-                    for (const job of res.jobs) {
-                        const items = job.items || job.stagedItems || [];
-                        for (let idx = 0; idx < items.length; idx++) {
-                            const item = items[idx];
-                            const rawPath = item.originalPath || item.localPath || item.stagedPath || item.photoUrl;
-                            if (!rawPath) continue;
-
-                            const photoId = `online_${job.id}_${idx}`;
-
-                            let dataUrl = rawPath;
-                            if (window.primeIdPro?.jobs?.readImageBase64 && !rawPath.startsWith('http') && !rawPath.startsWith('data:')) {
-                                try {
-                                    const imgRes = await window.primeIdPro.jobs.readImageBase64(rawPath);
-                                    if (imgRes.success && imgRes.dataUrl) {
-                                        dataUrl = imgRes.dataUrl;
-                                    }
-                                } catch {}
-                            }
-
-                            setUploads(prev => {
-                                if (prev.some(u => u.id === photoId || u.jobCode === (job.metadata?.jobCode || job.jobCode))) {
-                                    return prev;
-                                }
-
-                                const onlineUpload = {
-                                    id: photoId,
-                                    jobCode: job.metadata?.jobCode || job.jobCode || 'ONLINE-JOB',
-                                    file: null,
-                                    preview: dataUrl,
-                                    status: 'completed',
-                                    progress: 100,
-                                    error: null,
-                                    processedUrl: dataUrl,
-                                    transparentUrl: dataUrl,
-                                    bgColor: item.bgColor || job.metadata?.backgroundColor || '#FFFFFF',
-                                    serverId: job.serverJobId || job.id,
-                                    isOnline: true,
-                                    customerName: job.metadata?.customerName || 'Online Customer',
-                                    copies: job.metadata?.copies || job.metadata?.totalCopies || 8
-                                };
-
-                                return [...prev, onlineUpload];
-                            });
-                        }
-                    }
-                }
-            } catch (err) {
-                // Ignore silent poll error
-            }
-        };
-
-        checkOnlineJobs();
-        const interval = setInterval(checkOnlineJobs, 3000);
-        return () => clearInterval(interval);
-    }, []);
-
-    return { uploads, processedPhotos, uploadPhotos, removePhoto, updatePhotoUrl };
+    return {
+        uploads,
+        processedPhotos,
+        uploadPhotos,
+        removePhoto,
+        updatePhotoUrl,
+    };
 }

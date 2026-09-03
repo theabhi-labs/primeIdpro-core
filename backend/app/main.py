@@ -1,27 +1,34 @@
+print("[main.py] 1. importing core modules", flush=True)
 import os
 import logging
 from contextlib import asynccontextmanager
 
+print("[main.py] 2. importing fastapi", flush=True)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-import mediapipe as mp
 
+print("[main.py] 3. importing app.core.config", flush=True)
 from app.core.config import settings, UPLOAD_DIR, PROCESSED_DIR
+
+print("[main.py] 4. importing app.core.database", flush=True)
 from app.core.database import db
+
+print("[main.py] 5. importing app.core.cascade", flush=True)
 from app.core.cascade import load_cascade_classifiers, get_cv2_data_path
+
+print("[main.py] 6. importing app.core.state", flush=True)
 from app.core.state import uploaded_images, processing_status
+
+print("[main.py] 7. importing middlewares", flush=True)
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.exceptions import register_exception_handlers
+
+print("[main.py] 8. importing api_v1_router", flush=True)
 from app.api.v1 import api_v1_router
-from app.services.resize.presets import COUNTRY_PRESETS, PASSPORT_CONFIG
-from app.services.face_detection.detector import align_and_crop_face, calculate_passport_crop
-from app.services.face_detection.fallbacks import center_crop_fallback, align_crop_cascade_fallback
-from app.services.enhancement.enhancer import flatten_onto_bg, refine_edges_and_halo, enhance_image_quality
-from app.services.enhancement.validator import verify_passport_quality
-from app.services.background.remover import remove_background_lightweight
-from app.services.pipeline import detect_face_crop, process_image_async, recolor_image_logic
+
+print("[main.py] 9. all imports completed!", flush=True)
 
 # ========== IMAGE CODECS (HEIC / AVIF / WEBP SUPPORT) ==========
 try:
@@ -61,6 +68,7 @@ async def lifespan(app: FastAPI):
 
     # Load MediaPipe FaceMesh
     try:
+        import mediapipe as mp
         app.state.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=True,
             max_num_faces=2,
@@ -118,6 +126,8 @@ app.mount("/processed", StaticFiles(directory=PROCESSED_DIR), name="processed")
 
 # ========== API ROUTERS ==========
 app.include_router(api_v1_router, prefix="/api/v1")
+# Prime ID Pro v3.2.0 with Universal Card Studio & Credit Wallet
+
 
 
 # ========== ROOT & HEALTH CHECK ==========

@@ -1,0 +1,30 @@
+{
+  "id": "membership-vip-emerald",
+  "name": "VIP Membership Emerald",
+  "category": "membership",
+  "version": "1.0.0",
+  "description": "Luxurious emerald green card for clubs, gyms, libraries, and VIP memberships.",
+  "size": {
+    "width": 85.60,
+    "height": 53.98,
+    "unit": "mm",
+    "orientation": "horizontal"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    { "id": "name", "label": "Member Name", "type": "text", "required": true, "formatting": "uppercase" },
+    { "id": "memberId", "label": "Membership ID", "type": "text", "required": true },
+    { "id": "tier", "label": "Membership Tier", "type": "text", "required": false, "default_value": "PLATINUM" },
+    { "id": "validUpto", "label": "Valid Through", "type": "date", "required": false },
+    { "id": "mobile", "label": "Contact Number", "type": "phone", "required": false }
+  ],
+  "imageSlots": [
+    { "id": "photo", "label": "Member Photo", "required": false, "aspectRatio": "35x45" },
+    { "id": "organization.logo", "label": "Club / Org Logo", "required": false }
+  ],
+  "qr": {
+    "enabled": true,
+    "sourceField": "memberId",
+    "side": "back"
+  }
+}

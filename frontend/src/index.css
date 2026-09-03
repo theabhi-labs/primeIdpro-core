@@ -27,11 +27,16 @@
 }
 
 @layer base {
+  html {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-700));
+    background: #111827;
     min-height: 100vh;
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   }
+
   
   ::-webkit-scrollbar {
     width: 8px;

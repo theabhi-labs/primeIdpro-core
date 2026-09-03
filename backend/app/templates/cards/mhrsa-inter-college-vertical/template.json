@@ -1,0 +1,39 @@
+{
+  "id": "mhrsa-inter-college-vertical",
+  "name": "M.H.R.S.A. Inter College",
+  "category": "school",
+  "version": "1.0.0",
+  "description": "Indian vertical school ID card with gold-navy swoosh, student details table, barcode, principal signature, and terms.",
+  "size": {
+    "width": 53.98,
+    "height": 85.60,
+    "unit": "mm",
+    "orientation": "vertical"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    { "id": "name", "label": "Student's Name", "type": "text", "required": true, "formatting": "uppercase" },
+    { "id": "fatherName", "label": "Father's Name", "type": "text", "required": false, "formatting": "uppercase" },
+    { "id": "address", "label": "Address", "type": "text", "required": false, "formatting": "uppercase" },
+    { "id": "mobile", "label": "Mobile No.", "type": "phone", "required": false },
+    { "id": "dob", "label": "Date of Birth", "type": "date", "required": false },
+    { "id": "class", "label": "Class", "type": "text", "required": true },
+    { "id": "rollNumber", "label": "Roll No.", "type": "text", "required": true },
+    { "id": "emergencyContact", "label": "Emergency Contact", "type": "phone", "required": false }
+  ],
+  "imageSlots": [
+    { "id": "photo", "label": "Student Photo", "required": true, "aspectRatio": "35x45" },
+    { "id": "organization.logo", "label": "School Logo", "required": false },
+    { "id": "organization.signature", "label": "Principal Signature", "required": false }
+  ],
+  "barcode": {
+    "enabled": true,
+    "sourceField": "rollNumber",
+    "type": "code128"
+  },
+  "qr": {
+    "enabled": true,
+    "sourceField": "rollNumber",
+    "side": "back"
+  }
+}

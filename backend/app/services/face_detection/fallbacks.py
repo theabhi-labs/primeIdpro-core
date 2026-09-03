@@ -63,10 +63,10 @@ def align_crop_cascade_fallback(img_np: np.ndarray, country_code: str, dpi: int,
         return center_crop_fallback(img_np, country_code, dpi)
 
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGBA2GRAY) if img_np.shape[2] == 4 else cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(30, 30))
 
     if len(faces) == 0 and alt_cascade and not alt_cascade.empty():
-        faces = alt_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+        faces = alt_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=3, minSize=(30, 30))
 
     if len(faces) == 0:
         return center_crop_fallback(img_np, country_code, dpi)

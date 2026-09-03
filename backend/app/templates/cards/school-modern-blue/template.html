@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f1f5f9;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card-container {
+    width: 85.60mm;
+    height: 53.98mm;
+    position: relative;
+    background: #ffffff;
+    border-radius: 3mm;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    border: 0.5px solid #cbd5e1;
+  }
+  /* FRONT DESIGN */
+  .card-front {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: #ffffff;
+  }
+  .header-bar {
+    background: linear-gradient(135deg, #1e40af 0%, #0284c7 100%);
+    color: white;
+    padding: 2.2mm 3.5mm;
+    display: flex;
+    align-items: center;
+    gap: 2.5mm;
+  }
+  .logo-img {
+    width: 7mm;
+    height: 7mm;
+    object-fit: contain;
+    border-radius: 1mm;
+    background: white;
+    padding: 0.5mm;
+  }
+  .org-title {
+    font-size: 3.2mm;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    line-height: 1.1;
+    color: #ffffff;
+    max-width: 55mm;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .org-subtitle {
+    font-size: 1.9mm;
+    color: #bae6fd;
+    font-weight: 500;
+    margin-top: 0.3mm;
+  }
+  .front-body {
+    flex: 1;
+    display: flex;
+    padding: 2.5mm 3.5mm;
+    gap: 3.5mm;
+    align-items: center;
+  }
+  .photo-frame {
+    width: 22mm;
+    height: 28mm;
+    border-radius: 1.5mm;
+    border: 1.5px solid #0284c7;
+    overflow: hidden;
+    background: #f8fafc;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .photo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .details-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.1mm;
+  }
+  .student-name {
+    font-size: 3.4mm;
+    font-weight: 800;
+    color: #0f172a;
+    text-transform: uppercase;
+    border-bottom: 1.5px solid #0284c7;
+    padding-bottom: 0.6mm;
+    margin-bottom: 0.5mm;
+    line-height: 1.1;
+  }
+  .detail-row {
+    display: flex;
+    font-size: 2.2mm;
+    line-height: 1.2;
+  }
+  .detail-label {
+    width: 17mm;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    font-size: 1.9mm;
+  }
+  .detail-value {
+    flex: 1;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .front-footer {
+    height: 4mm;
+    background: #0f172a;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 3.5mm;
+    font-size: 1.8mm;
+    font-weight: 600;
+  }
+
+  /* BACK DESIGN */
+  .card-back {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    padding: 3mm;
+  }
+  .back-header {
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 1.5mm;
+    margin-bottom: 2mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .back-header h4 {
+    font-size: 2.6mm;
+    font-weight: 800;
+    color: #1e40af;
+    text-transform: uppercase;
+  }
+  .back-grid {
+    flex: 1;
+    display: flex;
+    gap: 3mm;
+  }
+  .back-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2mm;
+    font-size: 2.1mm;
+  }
+  .back-qr {
+    width: 18mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1mm;
+  }
+  .qr-img {
+    width: 15mm;
+    height: 15mm;
+    border: 1px solid #e2e8f0;
+    padding: 0.5mm;
+    border-radius: 1mm;
+  }
+  .signature-box {
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 1mm;
+    border-top: 0.5px dashed #cbd5e1;
+  }
+  .sign-col {
+    text-align: center;
+    font-size: 1.8mm;
+    font-weight: 700;
+    color: #475569;
+  }
+  .sign-img {
+    height: 5mm;
+    max-width: 18mm;
+    object-fit: contain;
+    margin-bottom: 0.5mm;
+  }
+  .terms-text {
+    font-size: 1.6mm;
+    color: #64748b;
+    line-height: 1.2;
+    margin-top: 1mm;
+  }
+</style>
+</head>
+<body>
+
+{% if side == 'back' %}
+  <!-- BACK OF CARD -->
+  <div class="card-container">
+    <div class="card-back">
+      <div class="back-header">
+        <h4>{{ organization.name or "Student Identity Card" }}</h4>
+        <span style="font-size: 1.8mm; color: #64748b; font-weight: 700;">SESSION: {{ organization.session or "2026-27" }}</span>
+      </div>
+
+      <div class="back-grid">
+        <div class="back-details">
+          {% if fatherName %}<div class="detail-row"><span class="detail-label">Father:</span><span class="detail-value">{{ fatherName }}</span></div>{% endif %}
+          {% if dob %}<div class="detail-row"><span class="detail-label">DOB:</span><span class="detail-value">{{ dob }}</span></div>{% endif %}
+          {% if bloodGroup %}<div class="detail-row"><span class="detail-label">Blood Grp:</span><span class="detail-value" style="color: #dc2626;">{{ bloodGroup }}</span></div>{% endif %}
+          {% if mobile %}<div class="detail-row"><span class="detail-label">Emergency:</span><span class="detail-value">{{ mobile }}</span></div>{% endif %}
+          {% if address %}<div class="detail-row"><span class="detail-label">Address:</span><span class="detail-value" style="font-size: 1.9mm;">{{ address }}</span></div>{% endif %}
+          <div class="terms-text">
+            • This card is property of institution.<br>
+            • If found, please return to office at {{ organization.phone or "School Campus" }}.
+          </div>
+        </div>
+
+        <div class="back-qr">
+          {% if qrCode %}<img src="{{ qrCode }}" class="qr-img" alt="QR">{% endif %}
+          <span style="font-size: 1.6mm; font-weight: 800; color: #0284c7;">#{{ rollNumber or "ID" }}</span>
+        </div>
+      </div>
+
+      <div class="signature-box">
+        <div class="sign-col">
+          <span style="font-size: 1.6mm; color: #94a3b8;">Student Sign</span>
+        </div>
+        <div class="sign-col">
+          {% if organization.signature %}<img src="{{ organization.signature }}" class="sign-img" alt="Sign">{% endif %}
+          <span>Principal / Authority</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <!-- FRONT OF CARD (DEFAULT) -->
+  <div class="card-container">
+    <div class="card-front">
+      <div class="header-bar">
+        {% if organization.logo %}
+          <img src="{{ organization.logo }}" class="logo-img" alt="Logo">
+        {% endif %}
+        <div>
+          <div class="org-title">{{ organization.name or "ABC PUBLIC SCHOOL" }}</div>
+          <div class="org-subtitle">{{ organization.address or "Affiliated to State Board • Estd. 2005" }}</div>
+        </div>
+      </div>
+
+      <div class="front-body">
+        <div class="photo-frame">
+          <img src="{{ photo or 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 fill=%22%23cbd5e1%22><rect width=%22100%22 height=%22100%22/><text x=%2250%%22 y=%2250%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%2364748b%22 font-size=%2214%22>PHOTO</text></svg>' }}" class="photo-img" alt="Student">
+        </div>
+
+        <div class="details-col">
+          <div class="student-name">{{ name or "STUDENT NAME" }}</div>
+          <div class="detail-row"><span class="detail-label">Roll No:</span><span class="detail-value">{{ rollNumber or "-" }}</span></div>
+          <div class="detail-row"><span class="detail-label">Class / Sec:</span><span class="detail-value">{{ class or "-" }} {% if section %}({{ section }}){% endif %}</span></div>
+          {% if admissionNo %}<div class="detail-row"><span class="detail-label">Adm No:</span><span class="detail-value">{{ admissionNo }}</span></div>{% endif %}
+          {% if bloodGroup %}<div class="detail-row"><span class="detail-label">Blood:</span><span class="detail-value" style="color: #e11d48;">{{ bloodGroup }}</span></div>{% endif %}
+        </div>
+      </div>
+
+      <div class="front-footer">
+        <span>STUDENT ID CARD</span>
+        <span>SESSION: {{ organization.session or "2026-27" }}</span>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+</body>
+</html>

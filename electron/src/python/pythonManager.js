@@ -15,15 +15,15 @@ class PythonManager {
 
     getBackendExecutablePath() {
         if (config.isDev) {
-            // Check if frozen exe exists in dev
-            const devExe = path.join(__dirname, "..", "..", "..", "backend", "dist", "PrimeIdProBackend", "PrimeIdProBackend.exe");
-            if (fs.existsSync(devExe)) {
-                return devExe;
-            }
-            // Check if Python venv exists in backend/.venv
+            // In dev mode, prefer local Python venv for hot reloading and live code updates
             const venvPy = path.join(__dirname, "..", "..", "..", "backend", ".venv", "Scripts", "python.exe");
             if (fs.existsSync(venvPy)) {
                 return { type: "python", path: venvPy, script: path.join(__dirname, "..", "..", "..", "backend", "server.py") };
+            }
+            // Check if frozen exe exists in dev as a secondary option
+            const devExe = path.join(__dirname, "..", "..", "..", "backend", "dist", "PrimeIdProBackend", "PrimeIdProBackend.exe");
+            if (fs.existsSync(devExe)) {
+                return devExe;
             }
             // Fallback to system python
             return { type: "python", path: "python", script: path.join(__dirname, "..", "..", "..", "backend", "server.py") };

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f172a;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card-container {
+    width: 53.98mm;
+    height: 85.60mm;
+    position: relative;
+    background: #090d16;
+    border-radius: 3mm;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    border: 0.5px solid #1e293b;
+    color: #f8fafc;
+  }
+  /* FRONT */
+  .card-front {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4mm 3mm;
+    position: relative;
+  }
+  .front-glow {
+    position: absolute;
+    top: -10mm;
+    right: -10mm;
+    width: 30mm;
+    height: 30mm;
+    background: radial-gradient(circle, rgba(14,165,233,0.3) 0%, rgba(0,0,0,0) 70%);
+    pointer-events: none;
+  }
+  .org-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1mm;
+    margin-bottom: 3.5mm;
+  }
+  .logo-img {
+    height: 7mm;
+    object-fit: contain;
+  }
+  .org-name {
+    font-size: 2.8mm;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #38bdf8;
+    text-align: center;
+  }
+  .photo-frame {
+    width: 26mm;
+    height: 32mm;
+    border-radius: 2mm;
+    border: 2px solid #0284c7;
+    overflow: hidden;
+    background: #1e293b;
+    margin-bottom: 3mm;
+    box-shadow: 0 0 12px rgba(2,132,199,0.3);
+  }
+  .photo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .emp-name {
+    font-size: 3.2mm;
+    font-weight: 800;
+    color: #ffffff;
+    text-align: center;
+    text-transform: uppercase;
+    line-height: 1.1;
+  }
+  .emp-designation {
+    font-size: 2.2mm;
+    font-weight: 600;
+    color: #38bdf8;
+    text-align: center;
+    margin-top: 0.8mm;
+    margin-bottom: 2.5mm;
+    text-transform: uppercase;
+  }
+  .info-badge {
+    width: 100%;
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 1.5mm;
+    padding: 1.8mm 2.5mm;
+    display: flex;
+    flex-direction: column;
+    gap: 1mm;
+    font-size: 1.9mm;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+  }
+  .info-label {
+    color: #94a3b8;
+    font-weight: 600;
+  }
+  .info-val {
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .front-bottom {
+    margin-top: auto;
+    font-size: 1.6mm;
+    color: #64748b;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* BACK */
+  .card-back {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4mm 3.5mm;
+    background: #090d16;
+  }
+  .back-title {
+    font-size: 2.4mm;
+    font-weight: 800;
+    color: #38bdf8;
+    text-transform: uppercase;
+    border-bottom: 1px solid #1e293b;
+    width: 100%;
+    text-align: center;
+    padding-bottom: 1.5mm;
+    margin-bottom: 3mm;
+  }
+  .back-qr-box {
+    background: #ffffff;
+    padding: 1.5mm;
+    border-radius: 2mm;
+    margin-bottom: 3mm;
+  }
+  .back-qr {
+    width: 20mm;
+    height: 20mm;
+    display: block;
+  }
+  .back-contact-box {
+    width: 100%;
+    font-size: 1.8mm;
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2mm;
+    background: #111827;
+    padding: 2mm;
+    border-radius: 1.5mm;
+    border: 1px solid #1f2937;
+  }
+  .terms-box {
+    margin-top: auto;
+    font-size: 1.5mm;
+    color: #64748b;
+    line-height: 1.2;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+{% if side == 'back' %}
+  <!-- BACK OF CARD -->
+  <div class="card-container">
+    <div class="card-back">
+      <div class="back-title">Employee Verification</div>
+
+      <div class="back-qr-box">
+        {% if qrCode %}
+          <img src="{{ qrCode }}" class="back-qr" alt="QR">
+        {% else %}
+          <div style="width:20mm;height:20mm;background:#eee;display:flex;align-items:center;justify-content:center;color:#666;font-size:1.8mm;">NO QR</div>
+        {% endif %}
+      </div>
+
+      <div class="back-contact-box">
+        {% if mobile %}<div><strong>Emergency:</strong> {{ mobile }}</div>{% endif %}
+        {% if email %}<div><strong>Email:</strong> {{ email }}</div>{% endif %}
+        {% if bloodGroup %}<div><strong>Blood Group:</strong> <span style="color:#f43f5e;">{{ bloodGroup }}</span></div>{% endif %}
+        <div><strong>Valid Till:</strong> {{ expiryDate or "DEC 2028" }}</div>
+      </div>
+
+      <div class="terms-box">
+        Property of {{ organization.name or "Company" }}.<br>
+        If found, please return to {{ organization.address or "HR Department" }}.
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <!-- FRONT OF CARD -->
+  <div class="card-container">
+    <div class="card-front">
+      <div class="front-glow"></div>
+
+      <div class="org-header">
+        {% if organization.logo %}
+          <img src="{{ organization.logo }}" class="logo-img" alt="Logo">
+        {% endif %}
+        <div class="org-name">{{ organization.name or "TECH CORP" }}</div>
+      </div>
+
+      <div class="photo-frame">
+        <img src="{{ photo or 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 fill=%22%231e293b%22><text x=%2250%%22 y=%2250%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%2338bdf8%22 font-size=%2214%22>PHOTO</text></svg>' }}" class="photo-img" alt="Employee">
+      </div>
+
+      <div class="emp-name">{{ name or "EMPLOYEE NAME" }}</div>
+      <div class="emp-designation">{{ designation or "OFFICER" }}</div>
+
+      <div class="info-badge">
+        <div class="info-row"><span class="info-label">EMP ID:</span><span class="info-val">{{ employeeId or "EMP-001" }}</span></div>
+        {% if department %}<div class="info-row"><span class="info-label">DEPT:</span><span class="info-val">{{ department }}</span></div>{% endif %}
+        {% if bloodGroup %}<div class="info-row"><span class="info-label">BLOOD:</span><span class="info-val" style="color:#f43f5e;">{{ bloodGroup }}</span></div>{% endif %}
+      </div>
+
+      <div class="front-bottom">AUTHORIZED IDENTIFICATION</div>
+    </div>
+  </div>
+{% endif %}
+
+</body>
+</html>

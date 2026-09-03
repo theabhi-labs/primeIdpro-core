@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+  .card-container {
+    width: 53.98mm;
+    height: 85.60mm;
+    position: relative;
+    background: #ffffff;
+    border-radius: 2.5mm;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    display: flex;
+    flex-direction: column;
+    border: 0.5px solid #cbd5e1;
+    flex-shrink: 0;
+  }
+
+
+  /* ================= FRONT SIDE ================= */
+  .card-front {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: #ffffff;
+  }
+
+  /* Front Header */
+  .front-header {
+    background: #002244;
+    color: #ffffff;
+    padding: 2mm 2.2mm 2.8mm 2.2mm;
+    position: relative;
+    clip-path: ellipse(125% 100% at 50% 0%);
+    border-bottom: 1.8px solid #f59e0b;
+  }
+  .header-content {
+    display: flex;
+    align-items: center;
+    gap: 1.8mm;
+  }
+  .school-logo {
+    width: 8.5mm;
+    height: 8.5mm;
+    border-radius: 50%;
+    background: #ffffff;
+    padding: 0.5mm;
+    flex-shrink: 0;
+  }
+  .school-titles {
+    flex: 1;
+    min-width: 0;
+  }
+  .school-name {
+    font-size: 3.4mm;
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: 0.3px;
+    color: #ffffff;
+    text-transform: uppercase;
+  }
+  .college-sub {
+    font-size: 2.3mm;
+    font-weight: 800;
+    color: #f59e0b;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-top: 0.2mm;
+  }
+  .school-address-top {
+    font-size: 1.45mm;
+    color: #e2e8f0;
+    margin-top: 0.8mm;
+    line-height: 1.15;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8mm;
+  }
+
+  /* Front Body */
+  .front-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5mm 3mm 0 3mm;
+  }
+
+  /* Photo Container */
+  .photo-frame {
+    width: 21mm;
+    height: 25.5mm;
+    border-radius: 2mm;
+    border: 1.8px solid #002244;
+    overflow: hidden;
+    background: #f8fafc;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    margin-bottom: 1.5mm;
+    flex-shrink: 0;
+  }
+  .photo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Details Table */
+  .details-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1.95mm;
+    line-height: 1.35;
+    color: #0f172a;
+  }
+  .details-table td {
+    padding: 0.28mm 0;
+    vertical-align: top;
+  }
+  .col-label {
+    width: 18.5mm;
+    font-weight: 700;
+    color: #1e293b;
+    white-space: nowrap;
+  }
+  .col-colon {
+    width: 2.5mm;
+    font-weight: 800;
+    color: #002244;
+    text-align: center;
+  }
+  .col-val {
+    font-weight: 800;
+    color: #000000;
+    text-transform: uppercase;
+  }
+
+  /* Front Footer */
+  .front-footer {
+    height: 11mm;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 2.5mm 1.5mm 2.5mm;
+    background: #ffffff;
+  }
+  .gold-wave-decor {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 32mm;
+    height: 10mm;
+    background: #002244;
+    clip-path: ellipse(100% 100% at 0% 100%);
+    border-top: 1.8px solid #f59e0b;
+    z-index: 1;
+  }
+  .barcode-container {
+    position: relative;
+    z-index: 2;
+    background: #ffffff;
+    border: 0.8px solid #cbd5e1;
+    border-radius: 1mm;
+    padding: 0.8mm 1.2mm;
+    margin-bottom: 0.5mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .barcode-svg {
+    width: 22mm;
+    height: 5.5mm;
+  }
+  .signature-block {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 0.5mm;
+  }
+  .sig-img {
+    width: 11mm;
+    height: 4mm;
+    object-fit: contain;
+  }
+  .sig-label {
+    font-size: 1.4mm;
+    font-weight: 800;
+    color: #1e293b;
+    border-top: 0.8px solid #64748b;
+    padding-top: 0.2mm;
+    margin-top: 0.2mm;
+    text-align: center;
+    width: 13mm;
+  }
+
+
+  /* ================= BACK SIDE ================= */
+  .card-back {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: #ffffff;
+    justify-content: space-between;
+  }
+
+  /* Back Header */
+  .back-header {
+    background: #002244;
+    color: #ffffff;
+    padding: 2.2mm 2mm 3.2mm 2mm;
+    text-align: center;
+    position: relative;
+    border-bottom: 1.8px solid #f59e0b;
+    clip-path: ellipse(130% 100% at 50% 0%);
+  }
+  .back-school-name {
+    font-size: 3.5mm;
+    font-weight: 900;
+    letter-spacing: 0.3px;
+    color: #ffffff;
+    text-transform: uppercase;
+  }
+  .back-college-sub {
+    font-size: 2.4mm;
+    font-weight: 800;
+    color: #f59e0b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 0.2mm;
+  }
+  .gold-divider {
+    width: 20mm;
+    height: 0.4mm;
+    background: #f59e0b;
+    margin: 0.8mm auto;
+    border-radius: 1mm;
+  }
+
+  /* Back Body */
+  .back-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5mm 3.2mm;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Address & Contact Info */
+  .back-contact-info {
+    font-size: 1.6mm;
+    color: #1e293b;
+    line-height: 1.25;
+    margin-bottom: 2mm;
+  }
+  .contact-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.2mm;
+    margin-bottom: 0.8mm;
+    font-weight: 700;
+  }
+  .icon-dot {
+    width: 2.2mm;
+    height: 2.2mm;
+    background: #002244;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1mm;
+    flex-shrink: 0;
+    margin-top: 0.2mm;
+  }
+
+  /* Watermark Emblem */
+  .watermark-bg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 32mm;
+    height: 32mm;
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* Terms Box */
+  .terms-card {
+    border: 1.2px solid #002244;
+    border-radius: 1.8mm;
+    overflow: hidden;
+    margin-top: auto;
+    margin-bottom: 2mm;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .terms-header {
+    background: #002244;
+    color: #ffffff;
+    font-size: 1.7mm;
+    font-weight: 800;
+    text-align: center;
+    padding: 0.7mm 0;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .terms-list {
+    padding: 1.2mm 1.8mm;
+    font-size: 1.45mm;
+    line-height: 1.35;
+    color: #0f172a;
+    list-style: none;
+  }
+  .terms-list li {
+    margin-bottom: 0.6mm;
+    position: relative;
+    padding-left: 2mm;
+    font-weight: 600;
+  }
+  .terms-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #002244;
+    font-weight: 900;
+  }
+
+  /* Back Bottom Footer */
+  .back-footer {
+    background: #002244;
+    color: #ffffff;
+    padding: 1.4mm 2mm;
+    text-align: center;
+    font-size: 1.7mm;
+    font-weight: 800;
+    border-top: 1.5px solid #f59e0b;
+    letter-spacing: 0.2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card-container">
+  {% if side == 'front' %}
+  <!-- ================= FRONT SIDE ================= -->
+  <div class="card-front">
+    <!-- Header -->
+    <div class="front-header">
+      <div class="header-content">
+        <!-- Circular Crest Logo -->
+        <svg class="school-logo" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="46" fill="#ffffff" stroke="#002244" stroke-width="4"/>
+          <circle cx="50" cy="50" r="41" fill="none" stroke="#f59e0b" stroke-width="2"/>
+          <path d="M25,65 C20,45 35,28 50,28 C65,28 80,45 75,65 C68,75 32,75 25,65 Z" fill="#002244"/>
+          <!-- Torch & Book -->
+          <polygon points="50,22 55,34 45,34" fill="#f59e0b"/>
+          <path d="M35,52 Q50,42 50,60 Q50,42 65,52" stroke="#ffffff" stroke-width="3" fill="none"/>
+          <!-- Laurel Leaves -->
+          <path d="M18,50 Q22,35 32,30" stroke="#16a34a" stroke-width="2.5" fill="none"/>
+          <path d="M82,50 Q78,35 68,30" stroke="#16a34a" stroke-width="2.5" fill="none"/>
+          <text x="50" y="82" font-size="9" font-family="Arial" font-weight="900" fill="#002244" text-anchor="middle">ESTD. 2010</text>
+        </svg>
+
+        <div class="school-titles">
+          <div class="school-name">{{ organization.name | default('M.H.R.S.A.') }}</div>
+          <div class="college-sub">INTER COLLEGE</div>
+          <div class="school-address-top">
+            <span>📍</span>
+            <span>{{ organization.address | default("Shahpur Jot Yusuf 'Hathila' Bahraich, Uttar Pradesh - 271801") }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="front-body">
+      <!-- Portrait Photo Frame -->
+      <div class="photo-frame">
+        {% if photo %}
+        <img class="photo-img" src="{{ photo }}" alt="Student">
+        {% else %}
+        <!-- Synthetic Generic Student Avatar -->
+        <svg viewBox="0 0 100 120" class="photo-img">
+          <rect width="100" height="120" fill="#f1f5f9"/>
+          <circle cx="50" cy="40" r="22" fill="#002244"/>
+          <path d="M15,115 C15,80 32,70 50,70 C68,70 85,80 85,115 Z" fill="#002244"/>
+          <circle cx="50" cy="38" r="17" fill="#fed7aa"/>
+          <path d="M42,30 Q50,23 58,30 Q50,26 42,30" fill="#1e293b"/>
+        </svg>
+        {% endif %}
+      </div>
+
+      <!-- Details Table -->
+      <table class="details-table">
+        <tr>
+          <td class="col-label">Student's Name</td>
+          <td class="col-colon">:</td>
+          <td class="col-val">{{ name | default('MARIYA') }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Father's Name</td>
+          <td class="col-colon">:</td>
+          <td class="col-val">{{ fatherName | default('SHANU') }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Address</td>
+          <td class="col-colon">:</td>
+          <td class="col-val">{{ address | default("SHAHPUR JOT YUSUF 'HATHILA' BAHRAICH") }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Mobile No.</td>
+          <td class="col-colon">:</td>
+          <td class="col-val" style="font-family: monospace;">{{ mobile | default('9125264245') }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Date of Birth</td>
+          <td class="col-colon">:</td>
+          <td class="col-val" style="font-family: monospace;">{{ dob | default('22/12/2011') }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Class</td>
+          <td class="col-colon">:</td>
+          <td class="col-val">{{ class | default('11th') }}</td>
+        </tr>
+        <tr>
+          <td class="col-label">Roll No.</td>
+          <td class="col-colon">:</td>
+          <td class="col-val" style="font-family: monospace;">{{ rollNumber | default('083') }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="front-footer">
+      <div class="gold-wave-decor"></div>
+      
+      <!-- Barcode representation -->
+      <div class="barcode-container">
+        <svg class="barcode-svg" viewBox="0 0 140 32">
+          <!-- Code 128 Simulated Precise Vector Bars -->
+          <rect x="0" y="0" width="3" height="32" fill="#000"/>
+          <rect x="5" y="0" width="2" height="32" fill="#000"/>
+          <rect x="9" y="0" width="4" height="32" fill="#000"/>
+          <rect x="15" y="0" width="2" height="32" fill="#000"/>
+          <rect x="19" y="0" width="3" height="32" fill="#000"/>
+          <rect x="24" y="0" width="5" height="32" fill="#000"/>
+          <rect x="31" y="0" width="2" height="32" fill="#000"/>
+          <rect x="35" y="0" width="4" height="32" fill="#000"/>
+          <rect x="41" y="0" width="3" height="32" fill="#000"/>
+          <rect x="46" y="0" width="2" height="32" fill="#000"/>
+          <rect x="50" y="0" width="4" height="32" fill="#000"/>
+          <rect x="56" y="0" width="3" height="32" fill="#000"/>
+          <rect x="61" y="0" width="5" height="32" fill="#000"/>
+          <rect x="68" y="0" width="2" height="32" fill="#000"/>
+          <rect x="72" y="0" width="4" height="32" fill="#000"/>
+          <rect x="78" y="0" width="3" height="32" fill="#000"/>
+          <rect x="83" y="0" width="2" height="32" fill="#000"/>
+          <rect x="87" y="0" width="4" height="32" fill="#000"/>
+          <rect x="93" y="0" width="5" height="32" fill="#000"/>
+          <rect x="100" y="0" width="2" height="32" fill="#000"/>
+          <rect x="104" y="0" width="4" height="32" fill="#000"/>
+          <rect x="110" y="0" width="3" height="32" fill="#000"/>
+          <rect x="115" y="0" width="2" height="32" fill="#000"/>
+          <rect x="119" y="0" width="4" height="32" fill="#000"/>
+          <rect x="125" y="0" width="3" height="32" fill="#000"/>
+          <rect x="130" y="0" width="4" height="32" fill="#000"/>
+          <rect x="136" y="0" width="4" height="32" fill="#000"/>
+        </svg>
+      </div>
+
+      <!-- Principal Signature -->
+      <div class="signature-block">
+        {% if organization.signature %}
+        <img class="sig-img" src="{{ organization.signature }}" alt="Sign">
+        {% else %}
+        <svg class="sig-img" viewBox="0 0 100 32">
+          <path d="M5,22 Q20,2 35,16 T65,8 T95,18" stroke="#15803d" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+        </svg>
+        {% endif %}
+        <span class="sig-label">Principal</span>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <!-- ================= BACK SIDE ================= -->
+  <div class="card-back">
+    <!-- Header -->
+    <div class="back-header">
+      <div class="back-school-name">{{ organization.name | default('M.H.R.S.A.') }}</div>
+      <div class="back-college-sub">INTER COLLEGE</div>
+      <div class="gold-divider"></div>
+    </div>
+
+    <!-- Body -->
+    <div class="back-body">
+      <!-- Watermark Crest Background -->
+      <svg class="watermark-bg" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="46" fill="none" stroke="#002244" stroke-width="4"/>
+        <circle cx="50" cy="50" r="41" fill="none" stroke="#f59e0b" stroke-width="2"/>
+        <path d="M25,65 C20,45 35,28 50,28 C65,28 80,45 75,65 C68,75 32,75 25,65 Z" fill="#002244"/>
+        <polygon points="50,22 55,34 45,34" fill="#f59e0b"/>
+        <path d="M35,52 Q50,42 50,60 Q50,42 65,52" stroke="#002244" stroke-width="3" fill="none"/>
+        <text x="50" y="82" font-size="9" font-family="Arial" font-weight="900" fill="#002244" text-anchor="middle">ESTD. 2010</text>
+      </svg>
+
+      <!-- Contact Info Lines -->
+      <div class="back-contact-info">
+        <div class="contact-line">
+          <span class="icon-dot">📍</span>
+          <span>{{ organization.address | default("Shahpur Jot Yusuf 'Hathila' Bahraich, Uttar Pradesh - 271801") }}</span>
+        </div>
+        <div class="contact-line">
+          <span class="icon-dot">📞</span>
+          <span style="font-family: monospace;">{{ organization.phone | default('74088065057') }}</span>
+        </div>
+      </div>
+
+      <!-- Terms & Conditions Box -->
+      <div class="terms-card">
+        <div class="terms-header">TERMS & CONDITIONS</div>
+        <ul class="terms-list">
+          <li>This card is non-transferable.</li>
+          <li>This card is the property of M.H.R.S.A. Inter College.</li>
+          <li>Loss of this card must be reported to the office immediately.</li>
+          <li>This card must be presented whenever required.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Bottom Footer -->
+    <div class="back-footer">
+      Emergency Contact : <span style="font-family: monospace;">{{ emergencyContact | default(mobile) | default('9125264245') }}</span>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>
