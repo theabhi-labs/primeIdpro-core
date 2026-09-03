@@ -104,6 +104,77 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // -------- Online Jobs Poller --------
+  const [onlineJobs, setOnlineJobs] = useState([]);
+
+  useEffect(() => {
+    const fetchOnlineJobs = async () => {
+      if (window.primeIdPro?.jobs?.listOnline) {
+        try {
+          const res = await window.primeIdPro.jobs.listOnline();
+          if (res?.success && Array.isArray(res.jobs)) {
+            const pending = res.jobs.filter(j => j.status !== 'PRINTED' && j.status !== 'COMPLETED');
+            setOnlineJobs(pending);
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+    };
+    fetchOnlineJobs();
+    const interval = setInterval(fetchOnlineJobs, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleLoadOnlineJob = async (job) => {
+    try {
+      if (!job) return;
+      const rawJob = await window.primeIdPro.jobs.get(job.id);
+      const items = rawJob?.job?.items || job.items || [];
+      const item = items[0];
+      const filePath = item?.original_path;
+
+      if (!filePath) {
+        setToast({ type: 'info', message: 'Downloading customer photo from cloud...' });
+        return;
+      }
+
+      const res = await window.primeIdPro.jobs.readImageBase64(filePath);
+      if (!res?.success || !res?.dataUrl) {
+        throw new Error(res?.error || 'Could not read image file');
+      }
+
+      // Convert base64 dataUrl to File
+      const arr = res.dataUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const file = new File([u8arr], `online_order_${job.id}.jpg`, { type: mime });
+
+      handleUpload([file]);
+      if (job.metadata?.totalCopies) {
+        updateSettings({ copies: Number(job.metadata.totalCopies) });
+      }
+
+      await window.primeIdPro.jobs.updateStatus({
+        jobId: job.id,
+        status: 'PROCESSING',
+        processingStatus: 'READY',
+      });
+
+      setToast({
+        type: 'success',
+        message: `Loaded walk-in order for ${job.metadata?.customerName || 'Customer'} (${job.metadata?.totalCopies || 8} Copies)!`,
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: 'Failed to load online order: ' + err.message });
+    }
+  };
+
   // -------- Session --------
   useEffect(() => {
     getOrCreateSession()
@@ -724,6 +795,40 @@ function App() {
           onDrop={handleDrop}
         >
           
+          {/* Online Counter Orders Banner */}
+          {onlineJobs.length > 0 && (
+            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-cyan-950/90 via-slate-900 to-blue-950/90 border border-cyan-500/50 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-400 flex items-center justify-center font-black shadow-inner">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-white tracking-tight">
+                      {onlineJobs.length} New Walk-in Counter Order{onlineJobs.length > 1 ? 's' : ''} Received!
+                    </h3>
+                    <span className="px-2 py-0.5 bg-cyan-500 text-slate-950 text-[10px] font-black rounded-full uppercase tracking-wider">
+                      QR ORDER
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Customer: <strong className="text-white">{onlineJobs[0].metadata?.customerName || 'Walk-in Customer'}</strong> • Order: <span className="font-mono text-cyan-300 font-bold">#{String(onlineJobs[0].order_id || onlineJobs[0].id).slice(-6).toUpperCase()}</span> • <strong className="text-emerald-400">{onlineJobs[0].metadata?.totalCopies || 8} Passport Photos</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  onClick={() => handleLoadOnlineJob(onlineJobs[0])}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex items-center gap-1.5 border border-cyan-300/40"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>⚡ Load &amp; Print Photo</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Workspace Subheader: Ready Assets + Bulk Actions */}
           <div className="flex items-center justify-between pb-3 shrink-0">
             <div className="flex items-center gap-3">
