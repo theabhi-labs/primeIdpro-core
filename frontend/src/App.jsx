@@ -689,27 +689,6 @@ function App() {
               </div>
             )}
 
-            {/* CSC Connection Status Pill */}
-            {deviceState?.isBound && deviceState?.status === 'ACTIVE' ? (
-              <button
-                onClick={() => setShowSettingsModal(true)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/50 border border-emerald-500/40 hover:border-emerald-500/70 rounded-xl text-emerald-300 text-xs font-bold transition-all shadow-sm"
-                title={`Connected to CSC Center: ${deviceState.centerName || deviceState.centerCode || 'Active'}`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>CSC: {deviceState.centerCode || 'Connected'}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowSettingsModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 hover:border-slate-600 rounded-xl text-slate-400 hover:text-white text-xs font-medium transition-all"
-                title="Standalone Mode — Click to pair CSC Center"
-              >
-                <Laptop size={13} className="text-slate-500" />
-                <span>Standalone</span>
-              </button>
-            )}
-
             {/* Credit Wallet Badge */}
             <CreditMeterBadge />
 

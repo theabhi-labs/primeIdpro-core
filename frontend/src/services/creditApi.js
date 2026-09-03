@@ -1,15 +1,10 @@
 import axios from 'axios';
-
-const getBaseUrl = () => {
-  if (typeof window !== 'undefined' && window.electronAPI?.getApiUrl) {
-    return window.electronAPI.getApiUrl();
-  }
-  return 'http://127.0.0.1:10000';
-};
+import { getApiBaseUrl } from './api';
 
 const getClient = () => {
+  const base = getApiBaseUrl().replace(/\/api\/v1\/?$/, '');
   return axios.create({
-    baseURL: `${getBaseUrl()}/api/v1/credits`,
+    baseURL: `${base}/api/v1/credits`,
     timeout: 10000,
     headers: { 'Content-Type': 'application/json' },
   });
