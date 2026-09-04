@@ -62,7 +62,7 @@ function App() {
   } = usePhotoProcessing();
 
   const { settings, updateSettings, resetToDefaults } = usePrintSettings();
-  const { consumeCredits } = useCredits();
+  const { consumeCredits, centerCode, connectedAccount, isConnected, openConnectModal } = useCredits();
   const [countries, setCountries] = useState([]);
   const [restoreVintageMode, setRestoreVintageMode] = useState(false);
 
@@ -981,7 +981,11 @@ function App() {
             jobThumbnails={jobThumbnails}
             loadingJobId={loadingJobId}
             isRefreshingQueue={isRefreshingQueue}
-            deviceState={deviceState}
+            deviceState={{
+              ...deviceState,
+              centerCode: centerCode || deviceState?.centerCode || 'CSC-GR-6112',
+              centerName: connectedAccount || deviceState?.centerName || 'abhi Yadav'
+            }}
             onLoadJob={handleLoadOnlineJob}
             onDismissJob={handleDismissOnlineJob}
             onClearQueue={handleClearAllOnlineJobs}
@@ -1228,7 +1232,11 @@ function App() {
       <CounterQrModal
         isOpen={showCounterQrModal}
         onClose={() => setShowCounterQrModal(false)}
-        deviceState={deviceState}
+        deviceState={{
+          ...deviceState,
+          centerCode: centerCode || deviceState?.centerCode || 'CSC-GR-6112',
+          centerName: connectedAccount || deviceState?.centerName || 'abhi Yadav'
+        }}
       />
     </div>
   </div>

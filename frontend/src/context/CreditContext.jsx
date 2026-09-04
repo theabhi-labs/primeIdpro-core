@@ -13,6 +13,7 @@ export function CreditProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectedAccount, setConnectedAccount] = useState(null);
   const [licenseKey, setLicenseKey] = useState(null);
+  const [centerCode, setCenterCode] = useState('CSC-GR-6112');
   const [tier, setTier] = useState('UNCONNECTED');
   const [rates, setRates] = useState({ passportPhotoPrint: 2, idCardPrintPerUnit: 5 });
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +31,7 @@ export function CreditProvider({ children }) {
         setIsConnected(connected);
         setConnectedAccount(data.connectedAccount || null);
         setLicenseKey(data.licenseKey || null);
+        if (data.centerCode) setCenterCode(data.centerCode);
         setTier(data.tier || 'UNCONNECTED');
         if (data.rates) setRates(data.rates);
 
@@ -122,6 +124,7 @@ export function CreditProvider({ children }) {
         credits,
         isConnected,
         connectedAccount,
+        centerCode,
         licenseKey,
         tier,
         rates,

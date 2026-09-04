@@ -43,7 +43,7 @@ async function runTests() {
         assert.ok(config.LOGS_DIR);
         assert.ok(config.TEMP_PRINT_DIR);
         assert.ok(config.STAGED_PHOTOS_DIR);
-        assert.strictEqual(config.POLL_INTERVAL_MS, 15000);
+        assert.strictEqual(config.POLL_INTERVAL_MS, 3000);
         assert.strictEqual(config.HEARTBEAT_INTERVAL_MS, 60000);
         assert.strictEqual(config.REMOTE_API_BASE_URL, "https://primeidpro-central-platform.onrender.com/api/v1");
         assert.strictEqual(config.REMOTE_API_FALLBACK_URL, "https://primeidpro.online/api/v1");
@@ -188,7 +188,7 @@ async function runTests() {
 
     // 6. PHOTO STAGER & VALIDATION
     console.log("\n6. Testing Photo Stager & Binary Validation...");
-    asyncTest("PhotoStager rejects non-image binaries and validates magic bytes", async () => {
+    await asyncTest("PhotoStager rejects non-image binaries and validates magic bytes", async () => {
         const photoStager = require("../src/network/photoStager");
         photoStager.ensureDir();
 
@@ -217,7 +217,7 @@ async function runTests() {
         assert.strictEqual(fallback.id, "india");
     });
 
-    asyncTest("OnlineJobAdapter converts Central Job with multi-photo items into local JobEngine", async () => {
+    await asyncTest("OnlineJobAdapter converts Central Job with multi-photo items into local JobEngine", async () => {
         const { onlineJobAdapter } = require("../src/jobs/onlineJobAdapter");
         const { jobEngine } = require("../src/jobs/jobEngine");
 
@@ -315,7 +315,7 @@ async function runTests() {
 
     // 10. CLEANUP MANAGER
     console.log("\n10. Testing Temporary Data Cleanup Manager...");
-    asyncTest("Schedule cleanup and verify safe path constraints", async () => {
+    await asyncTest("Schedule cleanup and verify safe path constraints", async () => {
         const cleanupManager = require("../src/cleanup/cleanupManager");
         const config = require("../src/config");
 

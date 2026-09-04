@@ -234,9 +234,34 @@ class DeviceManager {
 
     getDecryptedCredential() {
         const db = sqliteDb.getDb();
-        const row = db.prepare("SELECT encrypted_credential FROM device_state WHERE id = 1").get();
-        if (!row || !row.encrypted_credential) return null;
-        return safeStorage.decrypt(row.encrypted_credential);
+        const row = db.prepare("SELECT status, encrypted_credential FROM device_state WHERE id = 1").get();
+        if (!row || row.status !== DEVICE_STATUS.ACTIVE) return null;
+
+        if (row.encrypted_credential) {
+            const dec = safeStorage.decrypt(row.encrypted_credential);
+            if (dec) return dec;
+        }
+
+        // Fallback: check license_wallet.json
+        try {
+            const fs = require("fs");
+            const path = require("path");
+            const walletPaths = [
+                path.join(__dirname, "../../../backend/app/processed/license_wallet.json"),
+                path.join(process.env.APPDATA || "", "PrimeIDPro", "processed", "license_wallet.json")
+            ];
+            for (const wp of walletPaths) {
+                if (fs.existsSync(wp)) {
+                    const raw = JSON.parse(fs.readFileSync(wp, "utf8"));
+                    if (raw && raw.deviceToken) {
+                        return raw.deviceToken;
+                    }
+                    break;
+                }
+            }
+        } catch (e) {}
+
+        return null;
     }
 }
 

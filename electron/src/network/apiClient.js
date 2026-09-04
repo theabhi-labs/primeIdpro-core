@@ -62,15 +62,17 @@ class ApiClient {
         // Lazy load deviceManager to prevent circular dependency
         let token = deviceCredential;
         let dId = deviceId;
-        if (!token || !dId) {
-            try {
-                const { deviceManager } = require("../device/deviceManager");
-                const status = deviceManager.getDeviceStatus();
-                if (!token) token = deviceManager.getDecryptedCredential();
-                if (!dId) dId = status.deviceId;
-            } catch (err) {
-                // Ignore fallback
-            }
+        let cCode = null;
+        let cId = null;
+        try {
+            const { deviceManager } = require("../device/deviceManager");
+            const status = deviceManager.getDeviceStatus();
+            if (!token) token = deviceManager.getDecryptedCredential();
+            if (!dId) dId = status.deviceId;
+            if (status.centerCode) cCode = status.centerCode;
+            if (status.centerId) cId = status.centerId;
+        } catch (err) {
+            // Ignore fallback
         }
 
         const requestHeaders = {
@@ -81,6 +83,13 @@ class ApiClient {
             "X-App-Version": config.APP_VERSION,
             ...headers
         };
+
+        if (cCode) {
+            requestHeaders["X-Center-Code"] = cCode;
+        }
+        if (cId) {
+            requestHeaders["X-Center-Id"] = cId;
+        }
 
         if (dId) {
             requestHeaders["X-Device-Id"] = dId;

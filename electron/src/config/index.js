@@ -55,8 +55,8 @@ module.exports = {
     // Retention and Queue Limits
     RETENTION_MS: 10 * 60 * 1000, // 10 minutes temporary file cleanup
     CLEANUP_INTERVAL_MS: 60 * 1000, // 1 minute background sweep check
-    SYNC_INTERVAL_MS: 15 * 1000, // 15 seconds sync queue processor check
-    POLL_INTERVAL_MS: 15 * 1000, // 15 seconds inbound job polling interval
+    SYNC_INTERVAL_MS: 10 * 1000, // 10 seconds sync queue processor check
+    POLL_INTERVAL_MS: 3 * 1000, // 3 seconds inbound job polling interval (Fast live arrival)
     HEARTBEAT_INTERVAL_MS: 60 * 1000, // 60 seconds device heartbeat
     MAX_SYNC_RETRIES: 10,
     MAX_SYNC_BACKOFF_MS: 15 * 60 * 1000, // 15 minutes max backoff
