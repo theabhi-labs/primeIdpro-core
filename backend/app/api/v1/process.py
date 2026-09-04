@@ -1,18 +1,18 @@
 import os
-from fastapi import APIRouter, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Form, HTTPException  # pyrefly: ignore [missing-import]
+from fastapi.responses import FileResponse, JSONResponse  # pyrefly: ignore [missing-import]
 
-from app.core.state import uploaded_images, processing_status
-from app.services.resize.presets import COUNTRY_PRESETS
-from app.services.pipeline import recolor_image_logic
+from app.core.state import uploaded_images, processing_status  # pyrefly: ignore [missing-import]
+from app.services.resize.presets import COUNTRY_PRESETS  # pyrefly: ignore [missing-import]
+from app.services.pipeline import recolor_image_logic  # pyrefly: ignore [missing-import]
 
 router = APIRouter(prefix="/process", tags=["Process"])
 
 
-from app.services.enhancement.enhancer import flatten_onto_bg, restore_and_enhance_vintage_photo
-from app.utils.color import validate_and_normalize_color
-from PIL import Image
-import numpy as np
+from app.services.enhancement.enhancer import flatten_onto_bg, restore_and_enhance_vintage_photo  # pyrefly: ignore [missing-import]
+from app.utils.color import validate_and_normalize_color  # pyrefly: ignore [missing-import]
+from PIL import Image  # pyrefly: ignore [missing-import]
+import numpy as np  # pyrefly: ignore [missing-import]
 import time
 
 @router.post("/recolor/{image_id}")

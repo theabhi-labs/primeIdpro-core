@@ -1,5 +1,6 @@
-# Root virtual environment
+# Root virtual environment & junctions
 .venv/
+/app
 __pycache__/
 *.pyc
 .env

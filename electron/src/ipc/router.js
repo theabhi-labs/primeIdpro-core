@@ -1,4 +1,5 @@
 // electron/src/ipc/router.js
+const fs = require("fs");
 const { ipcMain } = require("electron");
 const config = require("../config");
 const logger = require("../logging/logger");
@@ -9,6 +10,8 @@ const { jobEngine } = require("../jobs/jobEngine");
 const { deviceManager } = require("../device/deviceManager");
 const syncQueue = require("../network/syncQueue");
 const jobPoller = require("../network/jobPoller");
+const photoStager = require("../network/photoStager");
+const sqliteDb = require("../database/sqliteDb");
 const { onlineJobAdapter } = require("../jobs/onlineJobAdapter");
 const updateManager = require("../updater/updateManager");
 const { getFullDiagnostics, getDiskSpaceInfo } = require("../diagnostics/diagnostics");
@@ -92,15 +95,99 @@ function registerIpcHandlers() {
         }
     });
 
-    
     ipcMain.handle("jobs:readImageBase64", async (event, filePath) => {
         try {
-            const fs = require("fs");
-            if (!fs.existsSync(filePath)) return { success: false, error: "File not found" };
+            if (!filePath || !fs.existsSync(filePath)) return { success: false, error: "File not found" };
             const buffer = await fs.promises.readFile(filePath);
             const base64 = buffer.toString("base64");
             const ext = filePath.endsWith(".png") ? "png" : filePath.endsWith(".webp") ? "webp" : "jpeg";
             return { success: true, dataUrl: `data:image/${ext};base64,${base64}` };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("jobs:loadPhoto", async (event, jobId) => {
+        try {
+            const validId = validateId(jobId);
+            const job = jobEngine.getJob(validId);
+            if (!job) return { success: false, error: "Job not found" };
+
+            const items = job.items || [];
+            const item = items[0] || {};
+            let localPath = item.originalPath || item.original_path;
+
+            // 1. If already staged locally and exists on disk
+            if (localPath && fs.existsSync(localPath)) {
+                const buffer = await fs.promises.readFile(localPath);
+                const ext = localPath.endsWith(".png") ? "png" : localPath.endsWith(".webp") ? "webp" : "jpeg";
+                return {
+                    success: true,
+                    dataUrl: `data:image/${ext};base64,${buffer.toString("base64")}`,
+                    job
+                };
+            }
+
+            // 2. Try staging remote photo now
+            const rawCentralJob = job.metadata?.rawCentralJob || {};
+            const rawItems = Array.isArray(rawCentralJob.items) ? rawCentralJob.items : [];
+            const rawItem = rawItems[0] || {};
+
+            const downloadUrl =
+                item.downloadUrl ||
+                item.photoUrl ||
+                item.download_url ||
+                rawItem.downloadUrl ||
+                rawItem.photoUrl ||
+                job.metadata?.downloadUrl ||
+                job.metadata?.photoUrl ||
+                job.metadata?.temporaryPhotoUrl ||
+                rawCentralJob.temporaryPhotoUrl ||
+                rawCentralJob.photoUrl;
+
+            if (!downloadUrl) {
+                return { success: false, error: "No photo download URL available for this order" };
+            }
+
+            const staged = await photoStager.stageRemotePhoto({
+                downloadUrl,
+                jobId: job.id,
+                photoIndex: item.itemIndex || 1,
+                originalFileName: item.originalFileName || "customer_photo.jpg"
+            });
+
+            // Update SQLite
+            const db = sqliteDb.getDb();
+            db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ?").run(staged.localPath, job.id);
+
+            const buffer = await fs.promises.readFile(staged.localPath);
+            const ext = staged.localPath.endsWith(".png") ? "png" : staged.localPath.endsWith(".webp") ? "webp" : "jpeg";
+
+            return {
+                success: true,
+                dataUrl: `data:image/${ext};base64,${buffer.toString("base64")}`,
+                job: jobEngine.getJob(validId)
+            };
+        } catch (err) {
+            logger.error("IPC_LOAD_PHOTO_ERROR", { jobId, error: err.message });
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("jobs:delete", async (event, jobId) => {
+        try {
+            const validId = validateId(jobId);
+            const success = jobEngine.deleteJob(validId);
+            return { success };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("jobs:clearOnline", async () => {
+        try {
+            const count = jobEngine.clearAllOnlineJobs();
+            return { success: true, count };
         } catch (err) {
             return { success: false, error: err.message };
         }

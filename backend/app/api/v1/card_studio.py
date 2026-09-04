@@ -3,11 +3,11 @@ import uuid
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query  # pyrefly: ignore [missing-import]
+from fastapi.responses import FileResponse, HTMLResponse  # pyrefly: ignore [missing-import]
 
-from app.core.config import UPLOAD_DIR, PROCESSED_DIR
-from app.models.card_studio import (
+from app.core.config import UPLOAD_DIR, PROCESSED_DIR  # pyrefly: ignore [missing-import]
+from app.models.card_studio import (  # pyrefly: ignore [missing-import]
     CardProject,
     CardRecord,
     CardTemplateMeta,
@@ -18,14 +18,14 @@ from app.models.card_studio import (
     GenerateBatchRequest,
     PreflightSummary,
 )
-from app.services.cards.importer import parse_xlsx_data, parse_csv_data
-from app.services.cards.mapper import auto_detect_mappings
-from app.services.cards.photo_matcher import match_photos_for_records
-from app.services.cards.photo_adapter import process_card_photo
-from app.services.cards.template_engine import list_card_templates, get_template_by_id, render_card_html, render_template_sample_html
-from app.services.cards.validator import run_preflight_validation
-from app.services.cards.pdf_generator import generate_card_batch_pdf
-from app.services.cards.project_store import (
+from app.services.cards.importer import parse_xlsx_data, parse_csv_data  # pyrefly: ignore [missing-import]
+from app.services.cards.mapper import auto_detect_mappings  # pyrefly: ignore [missing-import]
+from app.services.cards.photo_matcher import match_photos_for_records  # pyrefly: ignore [missing-import]
+from app.services.cards.photo_adapter import process_card_photo  # pyrefly: ignore [missing-import]
+from app.services.cards.template_engine import list_card_templates, get_template_by_id, render_card_html, render_template_sample_html  # pyrefly: ignore [missing-import]
+from app.services.cards.validator import run_preflight_validation  # pyrefly: ignore [missing-import]
+from app.services.cards.pdf_generator import generate_card_batch_pdf  # pyrefly: ignore [missing-import]
+from app.services.cards.project_store import (  # pyrefly: ignore [missing-import]
     save_project_to_disk,
     load_project_from_disk,
     list_saved_projects,

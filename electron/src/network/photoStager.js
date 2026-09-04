@@ -31,6 +31,28 @@ function validateImageMagicBytes(buffer) {
     return false;
 }
 
+function resolveFullDownloadUrl(downloadUrl) {
+    if (!downloadUrl || typeof downloadUrl !== "string") return null;
+    const trimmed = downloadUrl.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed;
+    }
+    // Reject other explicit protocols (ftp://, file://, etc.)
+    if (/^[a-zA-Z0-9+-.]+:\/\//.test(trimmed)) {
+        return null;
+    }
+    const base = config.REMOTE_API_BASE_URL || "https://primeidpro-central-platform.onrender.com/api/v1";
+    let origin = "https://primeidpro-central-platform.onrender.com";
+    try {
+        origin = new URL(base).origin;
+    } catch {}
+
+    if (trimmed.startsWith("/")) {
+        return `${origin}${trimmed}`;
+    }
+    return `${origin}/${trimmed}`;
+}
+
 class PhotoStager {
     constructor() {
         this.stagedDir = config.STAGED_PHOTOS_DIR;
@@ -42,20 +64,25 @@ class PhotoStager {
         }
     }
 
+    resolveUrl(url) {
+        return resolveFullDownloadUrl(url);
+    }
+
     async stageRemotePhoto({ downloadUrl, jobId, photoIndex = 1, originalFileName = "photo.jpg" }) {
         this.ensureDir();
 
-        if (!downloadUrl || typeof downloadUrl !== "string" || !downloadUrl.startsWith("http")) {
-            throw new Error("Invalid remote download URL provided");
+        const fullUrl = resolveFullDownloadUrl(downloadUrl);
+        if (!fullUrl || (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://"))) {
+            throw new Error(`Invalid remote download URL provided: ${downloadUrl}`);
         }
 
-        logger.info("REMOTE_PHOTO_DOWNLOAD_STARTED", { jobId, photoIndex });
+        logger.info("REMOTE_PHOTO_DOWNLOAD_STARTED", { jobId, photoIndex, url: fullUrl });
 
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s download timeout
 
-            const response = await fetch(downloadUrl, {
+            const response = await fetch(fullUrl, {
                 method: "GET",
                 signal: controller.signal
             });
@@ -63,6 +90,9 @@ class PhotoStager {
             clearTimeout(timeoutId);
 
             if (!response.ok) {
+                if (response.status === 404 || response.status === 410) {
+                    throw new Error(`Photo has expired on cloud server (HTTP ${response.status}). Temporary QR order photos are purged after retention time.`);
+                }
                 throw new Error(`Remote image download failed with HTTP ${response.status}`);
             }
 
@@ -126,3 +156,4 @@ class PhotoStager {
 
 const photoStager = new PhotoStager();
 module.exports = photoStager;
+

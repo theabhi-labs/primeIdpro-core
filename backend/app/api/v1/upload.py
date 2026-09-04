@@ -3,11 +3,11 @@ import uuid
 import asyncio
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, UploadFile, File, Form, Request
+from fastapi import APIRouter, UploadFile, File, Form, Request  # pyrefly: ignore [missing-import]
 
-from app.core.config import UPLOAD_DIR
-from app.core.state import uploaded_images, processing_status
-from app.services.pipeline import process_image_async
+from app.core.config import UPLOAD_DIR  # pyrefly: ignore [missing-import]
+from app.core.state import uploaded_images, processing_status  # pyrefly: ignore [missing-import]
+from app.services.pipeline import process_image_async  # pyrefly: ignore [missing-import]
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 

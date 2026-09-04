@@ -102,7 +102,7 @@ class OnlineJobAdapter {
         // Stage all photos asynchronously
         const stagedItems = [];
         for (const item of rawItems) {
-            const downloadUrl = item.downloadUrl || item.photoUrl || centralJob.temporaryPhotoUrl;
+            const downloadUrl = item.downloadUrl || item.photoUrl || centralJob.temporaryPhotoUrl || centralJob.photoUrl;
             if (downloadUrl) {
                 try {
                     const staged = await photoStager.stageRemotePhoto({

@@ -1,4 +1,5 @@
 // electron/src/jobs/jobEngine.js
+const fs = require("fs");
 const crypto = require("crypto");
 const sqliteDb = require("../database/sqliteDb");
 const logger = require("../logging/logger");
@@ -291,6 +292,44 @@ class JobEngine {
         if (printResult.changes > 0) {
             logger.info("RECOVERED_PRINTING_JOBS", { count: printResult.changes });
         }
+    }
+
+    deleteJob(jobId) {
+        const db = sqliteDb.getDb();
+        const existing = this.getJob(jobId);
+        if (!existing) return false;
+
+        // Cleanup staged files if any
+        if (Array.isArray(existing.items)) {
+            for (const item of existing.items) {
+                const p = item.originalPath || item.original_path;
+                if (p && fs.existsSync(p)) {
+                    try { fs.unlinkSync(p); } catch {}
+                }
+            }
+        }
+
+        db.prepare("DELETE FROM job_items WHERE job_id = ?").run(jobId);
+        db.prepare("DELETE FROM sync_queue WHERE job_id = ?").run(jobId);
+        db.prepare("DELETE FROM cleanup_queue WHERE job_id = ?").run(jobId);
+        db.prepare("DELETE FROM jobs WHERE id = ?").run(jobId);
+
+        logger.info("JOB_DELETED", { jobId });
+        this.emitJobUpdate({ id: jobId, deleted: true });
+        return true;
+    }
+
+    clearAllOnlineJobs() {
+        const db = sqliteDb.getDb();
+        const onlineRows = db.prepare("SELECT id FROM jobs WHERE source = 'ONLINE'").all();
+        let deletedCount = 0;
+        for (const row of onlineRows) {
+            if (this.deleteJob(row.id)) {
+                deletedCount++;
+            }
+        }
+        logger.info("CLEARED_ALL_ONLINE_JOBS", { count: deletedCount });
+        return deletedCount;
     }
 }
 

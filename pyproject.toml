@@ -1,0 +1,19 @@
+[tool.pyright]
+venvPath = "backend"
+venv = ".venv"
+extraPaths = [
+    "backend",
+    "backend/app",
+    "backend/.venv/Lib/site-packages"
+]
+reportMissingImports = false
+reportMissingTypeStubs = false
+
+[tool.pyrefly]
+pythonPath = "backend/.venv/Scripts/python.exe"
+extraPaths = [
+    "backend",
+    "backend/app",
+    "backend/.venv/Lib/site-packages"
+]
+disabledRules = ["missing-import"]

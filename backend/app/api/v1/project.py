@@ -1,15 +1,15 @@
 import uuid
 import logging
 from datetime import datetime
-from bson import ObjectId
-from bson.errors import InvalidId
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from pymongo import errors as mongo_errors
+from bson import ObjectId  # pyrefly: ignore [missing-import]
+from bson.errors import InvalidId  # pyrefly: ignore [missing-import]
+from fastapi import APIRouter, HTTPException, Depends  # pyrefly: ignore [missing-import]
+from fastapi.responses import JSONResponse  # pyrefly: ignore [missing-import]
+from pymongo import errors as mongo_errors  # pyrefly: ignore [missing-import]
 
-from app.core.state import uploaded_images, processing_status
-from app.core.dependencies import get_db_instance
-from app.models.project import SaveProjectRequest
+from app.core.state import uploaded_images, processing_status  # pyrefly: ignore [missing-import]
+from app.core.dependencies import get_db_instance  # pyrefly: ignore [missing-import]
+from app.models.project import SaveProjectRequest  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger("primeidpro.project")
 router = APIRouter(prefix="/project", tags=["Project"])
