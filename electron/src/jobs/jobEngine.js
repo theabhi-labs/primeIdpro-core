@@ -126,6 +126,7 @@ class JobEngine {
                 id: i.id,
                 itemIndex: i.item_index,
                 originalPath: i.original_path,
+                original_path: i.original_path,
                 processedUrl: i.processed_url,
                 transparentUrl: i.transparent_url,
                 bgColor: i.bg_color,
@@ -136,7 +137,7 @@ class JobEngine {
         };
     }
 
-    listJobs({ limit = 50, offset = 0, status = null, type = null } = {}) {
+    listJobs({ limit = 50, offset = 0, status = null, type = null, source = null } = {}) {
         const db = sqliteDb.getDb();
         let query = "SELECT * FROM jobs WHERE 1=1";
         const params = [];
@@ -148,6 +149,10 @@ class JobEngine {
         if (type) {
             query += " AND type = ?";
             params.push(type);
+        }
+        if (source) {
+            query += " AND source = ?";
+            params.push(source);
         }
 
         query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";

@@ -39,7 +39,12 @@ import {
   Image as ImageIcon,
   Laptop,
   Link2,
-  Smartphone
+  Smartphone,
+  QrCode,
+  RefreshCw,
+  Clock,
+  Phone,
+  ExternalLink
 } from 'lucide-react';
 
 function App() {
@@ -105,55 +110,113 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // -------- Online Jobs Poller --------
+  // -------- Online Jobs Poller & Thumbnail Loader --------
   const [onlineJobs, setOnlineJobs] = useState([]);
+  const [jobThumbnails, setJobThumbnails] = useState({});
+  const [loadingJobId, setLoadingJobId] = useState(null);
+  const [isRefreshingQueue, setIsRefreshingQueue] = useState(false);
+
+  const fetchOnlineJobs = async () => {
+    if (window.primeIdPro?.jobs?.listOnline) {
+      try {
+        const res = await window.primeIdPro.jobs.listOnline();
+        if (res?.success && Array.isArray(res.jobs)) {
+          const pending = res.jobs.filter(j => j.status !== 'PRINTED' && j.status !== 'COMPLETED');
+          setOnlineJobs(pending);
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+  };
 
   useEffect(() => {
-    const fetchOnlineJobs = async () => {
-      if (window.primeIdPro?.jobs?.listOnline) {
-        try {
-          const res = await window.primeIdPro.jobs.listOnline();
-          if (res?.success && Array.isArray(res.jobs)) {
-            const pending = res.jobs.filter(j => j.status !== 'PRINTED' && j.status !== 'COMPLETED');
-            setOnlineJobs(pending);
+    fetchOnlineJobs();
+    const interval = setInterval(fetchOnlineJobs, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Async thumbnail resolver for all active QR orders
+  useEffect(() => {
+    let isMounted = true;
+    const resolveThumbnails = async () => {
+      for (const job of onlineJobs) {
+        if (!jobThumbnails[job.id]) {
+          const rawJob = await window.primeIdPro?.jobs?.get(job.id);
+          const items = rawJob?.job?.items || job.items || [];
+          const item = items[0];
+          const localPath = item?.original_path || item?.originalPath;
+
+          if (localPath && window.primeIdPro?.jobs?.readImageBase64) {
+            try {
+              const res = await window.primeIdPro.jobs.readImageBase64(localPath);
+              if (res?.success && res?.dataUrl && isMounted) {
+                setJobThumbnails(prev => ({ ...prev, [job.id]: res.dataUrl }));
+                continue;
+              }
+            } catch (e) {}
           }
-        } catch (e) {
-          // Ignore
+
+          const remoteUrl =
+            item?.downloadUrl ||
+            item?.photoUrl ||
+            job.metadata?.rawCentralJob?.temporaryPhotoUrl ||
+            job.metadata?.rawCentralJob?.photoUrl;
+
+          if (remoteUrl && isMounted) {
+            setJobThumbnails(prev => ({ ...prev, [job.id]: remoteUrl }));
+          }
         }
       }
     };
-    fetchOnlineJobs();
-    const interval = setInterval(fetchOnlineJobs, 4000);
-    return () => clearInterval(interval);
-  }, []);
+
+    if (onlineJobs.length > 0) {
+      resolveThumbnails();
+    }
+  }, [onlineJobs]);
+
+  const handleManualRefreshQueue = async () => {
+    setIsRefreshingQueue(true);
+    try {
+      if (window.primeIdPro?.poller?.trigger) {
+        await window.primeIdPro.poller.trigger();
+      }
+      await fetchOnlineJobs();
+    } finally {
+      setTimeout(() => setIsRefreshingQueue(false), 600);
+    }
+  };
 
   const handleLoadOnlineJob = async (job) => {
     try {
       if (!job) return;
-      setToast({ type: 'info', message: 'Loading customer photo for print...' });
+      setLoadingJobId(job.id);
+      setToast({ type: 'info', message: `Loading photo for ${job.metadata?.customerName || 'Customer'}...` });
 
-      const rawJob = await window.primeIdPro.jobs.get(job.id);
+      const rawJob = await window.primeIdPro?.jobs?.get(job.id);
       const items = rawJob?.job?.items || job.items || [];
       const item = items[0];
-      let filePath = item?.original_path;
-      let dataUrl = null;
+      let filePath = item?.original_path || item?.originalPath;
+      let dataUrl = jobThumbnails[job.id] || null;
 
       // 1. Try reading from local staged file
-      if (filePath) {
+      if (filePath && window.primeIdPro?.jobs?.readImageBase64) {
         try {
           const res = await window.primeIdPro.jobs.readImageBase64(filePath);
           if (res?.success && res?.dataUrl) {
             dataUrl = res.dataUrl;
           }
         } catch (e) {
-          // fallback to remote fetch
+          // fallback
         }
       }
 
       // 2. Fallback: Fetch directly from remote cloud URL if not yet staged
-      if (!dataUrl) {
+      if (!dataUrl || !dataUrl.startsWith('data:')) {
         const remoteUrl =
+          dataUrl ||
           item?.downloadUrl ||
+          item?.photoUrl ||
           job.metadata?.rawCentralJob?.temporaryPhotoUrl ||
           job.metadata?.rawCentralJob?.photoUrl;
 
@@ -187,28 +250,34 @@ function App() {
       while (n--) {
         u8arr[n] = bstr.charCodeAt(n);
       }
-      const file = new File([u8arr], `customer_order_${job.id}.jpg`, { type: mime });
+      const file = new File([u8arr], `qr_customer_${job.metadata?.jobCode || job.id}.jpg`, { type: mime });
 
       // STRICTLY NORMAL PHOTO STUDIO MODE (No Vintage / No 4K Restore)
       setRestoreVintageMode(false);
-      uploadPhotos([file], selectedCountry || 'india', false);
+      const targetCountry = job.metadata?.templateId || selectedCountry || 'india';
+      uploadPhotos([file], targetCountry, false);
 
-      if (job.metadata?.totalCopies) {
-        updateSettings({ copies: Number(job.metadata.totalCopies) });
+      const targetCopies = Number(job.metadata?.totalCopies || job.metadata?.rawCentralJob?.copies || 8);
+      if (targetCopies > 0) {
+        updateSettings({ copies: targetCopies });
       }
 
-      await window.primeIdPro.jobs.updateStatus({
-        jobId: job.id,
-        status: 'PROCESSING',
-        processingStatus: 'READY',
-      });
+      if (window.primeIdPro?.jobs?.updateStatus) {
+        await window.primeIdPro.jobs.updateStatus({
+          jobId: job.id,
+          status: 'PROCESSING',
+          processingStatus: 'READY',
+        });
+      }
 
       setToast({
         type: 'success',
-        message: `✨ Loaded Normal Photo for ${job.metadata?.customerName || 'Customer'} (${job.metadata?.totalCopies || 8} Copies)!`,
+        message: `✨ Loaded ${job.metadata?.customerName || 'Customer'}'s photo (${targetCopies} Passport Photos ready)!`,
       });
     } catch (err) {
       setToast({ type: 'error', message: 'Failed to load online order: ' + err.message });
+    } finally {
+      setLoadingJobId(null);
     }
   };
 
@@ -832,36 +901,125 @@ function App() {
           onDrop={handleDrop}
         >
           
-          {/* Online Counter Orders Banner */}
+          {/* Incoming QR Code Counter Orders Gallery */}
           {onlineJobs.length > 0 && (
-            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-cyan-950/90 via-slate-900 to-blue-950/90 border border-cyan-500/50 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-400 flex items-center justify-center font-black shadow-inner">
-                  <Smartphone className="w-5 h-5" />
-                </div>
-                <div>
+            <div className="mb-4 p-3.5 rounded-2xl bg-slate-900/95 border border-cyan-500/40 shadow-[0_0_35px_rgba(6,182,212,0.18)] flex flex-col gap-3 shrink-0 backdrop-blur-xl transition-all">
+              {/* Header Bar */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-cyan-400 animate-ping absolute opacity-75" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                  </div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black text-white tracking-tight">
-                      {onlineJobs.length} New Walk-in Counter Order{onlineJobs.length > 1 ? 's' : ''} Received!
-                    </h3>
-                    <span className="px-2 py-0.5 bg-cyan-500 text-slate-950 text-[10px] font-black rounded-full uppercase tracking-wider">
-                      QR ORDER
+                    <span className="text-xs font-black text-white tracking-wide uppercase flex items-center gap-1.5">
+                      <QrCode className="w-4 h-4 text-cyan-400" />
+                      Live QR Code Counter Orders
+                    </span>
+                    <span className="px-2 py-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-[10px] font-black rounded-full uppercase shadow-sm">
+                      {onlineJobs.length} {onlineJobs.length === 1 ? 'Order' : 'Orders'} Waiting
                     </span>
                   </div>
-                  <p className="text-xs text-slate-300 mt-0.5">
-                    Customer: <strong className="text-white">{onlineJobs[0].metadata?.customerName || 'Walk-in Customer'}</strong> • Order: <span className="font-mono text-cyan-300 font-bold">#{String(onlineJobs[0].order_id || onlineJobs[0].id).slice(-6).toUpperCase()}</span> • <strong className="text-emerald-400">{onlineJobs[0].metadata?.totalCopies || 8} Passport Photos</strong>
-                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleManualRefreshQueue}
+                    disabled={isRefreshingQueue}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-[11px] font-medium text-slate-300 hover:text-white border border-slate-700/60 transition-all active:scale-95"
+                    title="Refresh online orders queue"
+                  >
+                    <RefreshCw className={`w-3 h-3 text-cyan-400 ${isRefreshingQueue ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <button
-                  onClick={() => handleLoadOnlineJob(onlineJobs[0])}
-                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex items-center gap-1.5 border border-cyan-300/40"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>⚡ Load &amp; Print Photo</span>
-                </button>
+              {/* Horizontal Scrollable Orders Cards with Photo Previews */}
+              <div className="flex items-stretch gap-3 overflow-x-auto pb-1.5 custom-scrollbar">
+                {onlineJobs.map((job) => {
+                  const jobMeta = job.metadata || {};
+                  const customerName = jobMeta.customerName || 'Walk-in Customer';
+                  const customerPhone = jobMeta.customerPhone || '';
+                  const totalCopies = jobMeta.totalCopies || jobMeta.rawCentralJob?.copies || 8;
+                  const templateName = jobMeta.templateName || 'Indian Passport (35×45mm)';
+                  const orderCode = String(jobMeta.jobCode || job.order_id || job.id).slice(-6).toUpperCase();
+                  const photoThumbnail = jobThumbnails[job.id];
+                  const isLoadingThis = loadingJobId === job.id;
+
+                  return (
+                    <div
+                      key={job.id}
+                      onClick={() => !isLoadingThis && handleLoadOnlineJob(job)}
+                      className="group relative flex items-center gap-3.5 p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-950 border border-slate-800 hover:border-cyan-400/80 hover:shadow-[0_0_20px_rgba(6,182,212,0.25)] transition-all cursor-pointer shrink-0 min-w-[320px] max-w-[380px]"
+                    >
+                      {/* Photo Thumbnail */}
+                      <div className="relative w-14 h-16 rounded-lg overflow-hidden bg-slate-900 border border-cyan-500/30 group-hover:border-cyan-400 flex items-center justify-center shrink-0 shadow-inner">
+                        {photoThumbnail ? (
+                          <img
+                            src={photoThumbnail}
+                            alt={customerName}
+                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-1 text-slate-500">
+                            <ImageIcon className="w-5 h-5 text-cyan-400/60" />
+                            <span className="text-[8px] text-cyan-400/70 font-mono">LOADING</span>
+                          </div>
+                        )}
+                        <span className="absolute bottom-0 inset-x-0 bg-slate-950/90 text-cyan-300 text-[9px] font-black text-center py-0.5 border-t border-cyan-500/20">
+                          {totalCopies} Pcs
+                        </span>
+                      </div>
+
+                      {/* Order & Customer Details */}
+                      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                        <div className="flex items-center justify-between gap-1">
+                          <h4 className="text-xs font-bold text-white truncate max-w-[150px] group-hover:text-cyan-300 transition-colors">
+                            {customerName}
+                          </h4>
+                          <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold rounded">
+                            #{orderCode}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 my-0.5 truncate">
+                          {customerPhone && <span>{customerPhone} •</span>}
+                          <span className="text-slate-300 truncate">{templateName}</span>
+                        </div>
+
+                        {/* Action Row */}
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-slate-800/60">
+                          <span className="text-[10px] text-emerald-400 font-bold">
+                            {totalCopies} Passport Photos
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLoadOnlineJob(job);
+                            }}
+                            disabled={isLoadingThis}
+                            className="px-2.5 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-[11px] rounded-lg shadow-sm active:scale-95 transition-all flex items-center gap-1 border border-cyan-300/40"
+                          >
+                            {isLoadingThis ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin text-slate-950" />
+                                <span>Loading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3 h-3" />
+                                <span>⚡ Load Photo</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
