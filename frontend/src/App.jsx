@@ -14,7 +14,6 @@ import CreditMeterBadge from './components/Credits/CreditMeterBadge';
 import ConnectOnlineModal from './components/Credits/ConnectOnlineModal';
 import LiveKioskGallery from './components/Studio/LiveKioskGallery';
 import CounterQrModal from './components/Studio/CounterQrModal';
-import QuickPairModal from './components/Studio/QuickPairModal';
 import { useCredits } from './context/CreditContext';
 import { getCountries, saveProject, getOrCreateSession, extractErrorMessage, generateSheetPdf, downloadBlob, validateImage } from './services/api';
 
@@ -81,7 +80,6 @@ function App() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [deviceState, setDeviceState] = useState(null);
   const [showCounterQrModal, setShowCounterQrModal] = useState(false);
-  const [showQuickPairModal, setShowQuickPairModal] = useState(false);
   const [currentWorkspace, setCurrentWorkspace] = useState('passport'); // 'passport' | 'card-studio'
 
 
@@ -989,7 +987,6 @@ function App() {
             onClearQueue={handleClearAllOnlineJobs}
             onRefresh={handleManualRefreshQueue}
             onOpenQrModal={() => setShowCounterQrModal(true)}
-            onOpenPairModal={() => setShowQuickPairModal(true)}
           />
 
           {/* Workspace Subheader: Ready Assets + Bulk Actions */}
@@ -1232,20 +1229,6 @@ function App() {
         isOpen={showCounterQrModal}
         onClose={() => setShowCounterQrModal(false)}
         deviceState={deviceState}
-      />
-
-      {/* Quick 6-Digit Pair Modal */}
-      <QuickPairModal
-        isOpen={showQuickPairModal}
-        onClose={() => setShowQuickPairModal(false)}
-        deviceState={deviceState}
-        onPairSuccess={async () => {
-          if (window.primeIdPro?.device?.getStatus) {
-            const status = await window.primeIdPro.device.getStatus();
-            setDeviceState(status);
-          }
-          await fetchOnlineJobs();
-        }}
       />
     </div>
   </div>

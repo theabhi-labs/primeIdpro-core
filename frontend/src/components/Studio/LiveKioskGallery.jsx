@@ -27,7 +27,6 @@ export default function LiveKioskGallery({
   onClearQueue,
   onRefresh,
   onOpenQrModal,
-  onOpenPairModal,
 }) {
   const isBound = deviceState?.isBound || deviceState?.status === 'ACTIVE';
   const centerCode = deviceState?.centerCode || 'CSC-GR-6112';
@@ -56,7 +55,7 @@ export default function LiveKioskGallery({
             <span className="text-slate-500">Center:</span>
             <span className="font-mono font-bold text-cyan-400">{centerCode}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-slate-300 truncate max-w-[120px]">{centerName}</span>
+            <span className="text-slate-300 truncate max-w-[150px]">{centerName}</span>
           </div>
 
           {onlineJobs.length > 0 ? (
@@ -76,22 +75,11 @@ export default function LiveKioskGallery({
           <button
             type="button"
             onClick={onOpenQrModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-white font-bold text-xs border border-cyan-500/30 transition-all active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-cyan-950/40 cursor-pointer"
             title="Display QR code for customers to scan"
           >
-            <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+            <Smartphone className="w-3.5 h-3.5" />
             <span>📱 Show Counter QR</span>
-          </button>
-
-          {/* Pair Desktop Button */}
-          <button
-            type="button"
-            onClick={onOpenPairModal}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white font-medium text-xs border border-slate-700/60 transition-all active:scale-95"
-            title="Pair or re-bind desktop with 6-digit code"
-          >
-            <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden md:inline">Pair Desktop</span>
           </button>
 
           {/* Clear Queue (if orders exist) */}
