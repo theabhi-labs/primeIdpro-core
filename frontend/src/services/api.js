@@ -153,20 +153,6 @@ export const uploadBatch = async (files, countryCode = 'india', bgColor = 'white
     return response.data;
 };
 
-// Real-time 4K AI Restoration fine-tuning
-export const restore4kEnhance = async (imageId, { bgColor = 'white', clarityBoost = 1.40, denoiseLevel = 0.60, colorVibrance = 1.15, autoDeage = true } = {}) => {
-    console.log(`✨ Fine-tuning 4K AI Restoration for image: ${imageId}`);
-    const formData = new FormData();
-    formData.append('bg_color', bgColor);
-    formData.append('clarity_boost', clarityBoost);
-    formData.append('denoise_level', denoiseLevel);
-    formData.append('color_vibrance', colorVibrance);
-    formData.append('auto_deage', autoDeage ? 'true' : 'false');
-
-    const response = await api.post(`/process/restore-4k/${imageId}`, formData);
-    return response.data;
-};
-
 // Upload from URL
 export const uploadFromUrl = async (url) => {
     console.log(` Uploading from URL: ${url}`);
@@ -207,6 +193,29 @@ export const processBatch = async (imageIds, options = {}) => {
 export const getStatus = async (imageId) => {
     console.log(` Checking status for ${imageId}`);
     const response = await api.get(`/process/status/${imageId}`);
+    return response.data;
+};
+
+// 4K Super-Resolution & Vintage Restoration
+export const restore4kEnhance = async (imageId, options = {}) => {
+    console.log(`✨ Applying 4K Super-Resolution to ${imageId}`, options);
+    const formData = new FormData();
+    formData.append('bg_color', options.bgColor || '#FFFFFF');
+    formData.append('clarity_boost', String(options.clarityBoost ?? 1.25));
+    formData.append('denoise_level', String(options.denoiseLevel ?? 0.50));
+    formData.append('color_vibrance', String(options.colorVibrance ?? 1.08));
+    formData.append('auto_deage', String(options.autoDeage ?? true));
+    formData.append('hair_depth', String(options.hairDepth ?? 1.30));
+    const response = await api.post(`/process/restore-4k/${imageId}`, formData);
+    return response.data;
+};
+
+// Magic AI Background & Edge Fix (On-Demand Cloud Matting)
+export const magicAiBgFix = async (imageId, options = {}) => {
+    console.log(`🪄 Applying Magic AI Background Fix to ${imageId}`, options);
+    const formData = new FormData();
+    formData.append('bg_color', options.bgColor || '#FFFFFF');
+    const response = await api.post(`/process/magic-ai-bg/${imageId}`, formData);
     return response.data;
 };
 

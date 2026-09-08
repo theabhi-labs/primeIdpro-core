@@ -62,7 +62,7 @@ function App() {
   } = usePhotoProcessing();
 
   const { settings, updateSettings, resetToDefaults } = usePrintSettings();
-  const { consumeCredits, centerCode, connectedAccount, isConnected, openConnectModal } = useCredits();
+  const { checkCreditsSufficient, consumeCredits, centerCode, connectedAccount, isConnected, openConnectModal } = useCredits();
   const [countries, setCountries] = useState([]);
   const [restoreVintageMode, setRestoreVintageMode] = useState(false);
 
@@ -480,55 +480,67 @@ function App() {
     }
   };
 
-  // -------- Print Helpers --------
+  // -------- Print Helpers (100% Actual Scale & Live Print Preview) --------
   const printViaIframe = (html) => {
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
     iframe.style.width = '0';
     iframe.style.height = '0';
     iframe.style.border = 'none';
+    iframe.style.visibility = 'hidden';
     document.body.appendChild(iframe);
+
     const iframeDoc = iframe.contentWindow.document;
     iframeDoc.open();
     iframeDoc.write(html);
     iframeDoc.close();
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
-  };
 
-  const printViaElectron = async (html, { orientation, paperSize } = {}) => {
-    setIsPrinting(true);
-    try {
-      const result = await window.electronAPI.printSheet(html, { orientation, paperSize });
-      if (!result?.success) {
-        setToast({ type: 'error', message: result?.error || 'Printing failed. Please try again.' });
-        return;
+    const triggerPrint = () => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error('Print trigger error:', err);
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 3000);
       }
-      if (result.mode === 'pdf-fallback') {
-        setToast({ type: 'info', message: 'Print preview isn’t supported here — opened a PDF instead.' });
-      } else if (result.pdfPath) {
-        setToast({ type: 'success', message: 'PDF generated and opened.' });
-      }
-    } catch (err) {
-      setToast({ type: 'error', message: err?.message || 'Printing failed unexpectedly. Please try again.' });
-    } finally {
-      setIsPrinting(false);
+    };
+
+    const imgs = Array.from(iframeDoc.images);
+    if (imgs.length === 0 || imgs.every(img => img.complete)) {
+      setTimeout(triggerPrint, 150);
+    } else {
+      let loaded = 0;
+      imgs.forEach(img => {
+        img.onload = img.onerror = () => {
+          loaded++;
+          if (loaded >= imgs.length) {
+            setTimeout(triggerPrint, 150);
+          }
+        };
+      });
+      // Safety timeout
+      setTimeout(triggerPrint, 3000);
     }
   };
-
-  const printLayout = async (photoEntries, margin, paperSize, rows, cols, photoSize, orientation = 'Portrait', cutMarks = true, border = true) => {
+  const printLayout = async (photoEntries, margin, paperSize, rows, cols, photoSize, orientation = 'Portrait', cutMarks = true, border = true, description = '', photoCount = 1) => {
     if (!photoEntries.length) return;
 
-    // Check & consume 2 credits for passport sheet print
-    const allowed = await consumeCredits({
+    const count = Math.max(1, photoCount || 1);
+    const totalCredits = count * 2;
+
+    // 1. Pre-flight check: make sure tokens are sufficient before starting
+    const hasEnough = checkCreditsSufficient({
       type: 'passport',
-      count: 1,
-      description: `Passport Photo Direct Print (${photoSize || '35x45'})`
+      count: count
     });
-    if (!allowed) return;
+    if (!hasEnough) return;
 
     const PHOTO_WIDTH_MM = photoSize === '2x2' ? 50.8 : 35;
     const PHOTO_HEIGHT_MM = photoSize === '2x2' ? 50.8 : 45;
@@ -579,24 +591,34 @@ function App() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Print Passport Photos (300 DPI Standard)</title>
+        <meta charset="utf-8" />
+        <title>Passport Photo Sheet - 300 DPI 100% Actual Size</title>
         <style>
-          * { margin:0; padding:0; box-sizing:border-box; }
+          * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box !important; 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+          }
           @page {
             size: ${paper.w}mm ${paper.h}mm;
-            margin: 0;
+            margin: 0mm !important;
           }
-          body { 
-            padding: ${margin.top}mm ${margin.right}mm ${margin.bottom}mm ${margin.left}mm; 
-            background: white; 
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+          html, body { 
+            width: 100%;
+            height: 100%;
+            margin: 0 !important;
+            padding: ${margin.top}mm ${margin.right}mm ${margin.bottom}mm ${margin.left}mm !important; 
+            background: #ffffff !important; 
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important; 
           }
           .page { 
             page-break-after: always; 
             break-after: page; 
             height: auto; 
-            min-height: 100vh;
+            min-height: 100%;
             display: flex;
             justify-content: flex-start;
           }
@@ -608,8 +630,9 @@ function App() {
             align-content: start;
           }
           .photo-card {
-            width: ${PHOTO_WIDTH_MM}mm;
-            height: ${PHOTO_HEIGHT_MM}mm;
+            width: ${PHOTO_WIDTH_MM}mm !important;
+            height: ${PHOTO_HEIGHT_MM}mm !important;
+            box-sizing: border-box !important;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -618,21 +641,28 @@ function App() {
             position: relative;
           }
           .photo-card.has-border {
-            border: 1px solid #d0d0d0;
+            border: 1px solid #c0c0c0 !important;
           }
           .photo-card img {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: high-quality;
           }
           .photo-card.empty { 
             border: none;
             visibility: hidden;
           }
           @media print { 
-            body { padding: ${margin.top}mm ${margin.right}mm ${margin.bottom}mm ${margin.left}mm; } 
-            .photo-card.has-border { border: 1px solid #ccc; } 
+            html, body { 
+              padding: ${margin.top}mm ${margin.right}mm ${margin.bottom}mm ${margin.left}mm !important; 
+              background: #ffffff !important; 
+            } 
+            .photo-card.has-border { 
+              border: 1px solid #b0b0b0 !important; 
+            } 
           }
         </style>
       </head>
@@ -640,26 +670,29 @@ function App() {
       </html>
     `;
 
-    if (window.electronAPI?.isElectron) {
-      printViaElectron(html, { orientation, paperSize });
-    } else {
-      const iframeHtml = html.replace(
-        '</body>',
-        '<script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\\/script></body>'
-      );
-      printViaIframe(iframeHtml);
-    }
+    // 2. Open print dialog
+    printViaIframe(html);
+
+    // 3. Deduct tokens AFTER print is successfully prepared & dispatched
+    await consumeCredits({
+      type: 'passport',
+      count: count,
+      description: description || `Passport Photo Sheet Print (${count} photo${count > 1 ? 's' : ''} • ${photoSize || '35x45'})`
+    });
+    setToast({ type: 'success', message: `🖨️ Print layout ready! (-${totalCredits} Credits)` });
   };
 
   // -------- Export PDF Handler (Strict 300 DPI) --------
   const handleExportPdf = async ({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks = true, border = true }) => {
-    // Check & consume 2 credits for passport sheet export
-    const allowed = await consumeCredits({
+    const photoCount = Math.max(1, photoList?.length || 1);
+    const totalCredits = photoCount * 2;
+
+    // 1. Pre-flight check: ensure sufficient tokens before network export
+    const hasEnough = checkCreditsSufficient({
       type: 'passport',
-      count: 1,
-      description: `Passport Photo Sheet Export (${photoSize || '35x45'})`
+      count: photoCount
     });
-    if (!allowed) return;
+    if (!hasEnough) return;
 
     setIsPrinting(true);
     try {
@@ -685,7 +718,15 @@ function App() {
 
       const pdfBlob = await generateSheetPdf(payload);
       downloadBlob(pdfBlob, `Passport_Sheet_${photoSize}_300DPI.pdf`);
-      setToast({ type: 'success', message: '✅ 300 DPI PDF Sheet downloaded successfully! (-2 Credits)' });
+
+      // 2. Deduct credits AFTER successful download
+      await consumeCredits({
+        type: 'passport',
+        count: photoCount,
+        description: `Passport Photo Sheet Export (${photoCount} photo${photoCount > 1 ? 's' : ''} • ${photoSize || '35x45'})`
+      });
+
+      setToast({ type: 'success', message: `✅ 300 DPI PDF Sheet downloaded successfully! (-${totalCredits} Credits)` });
     } catch (err) {
       console.error('PDF generation failed:', err);
       setToast({ type: 'error', message: extractErrorMessage(err) });
@@ -695,16 +736,9 @@ function App() {
   };
 
   // -------- Print handlers --------
-  const handlePrintFromEditor = async ({ photoUrl, copies, margin, paperSize, rows, cols, photoSize, bgColor, orientation, cutMarks, border }) => {
-    const allowed = await consumeCredits({
-      type: 'passport',
-      count: 1,
-      description: `Passport Photo Sheet Print (${photoSize || '35x45'})`
-    });
-    if (!allowed) return;
-
+  const handlePrintFromEditor = ({ photoUrl, copies, margin, paperSize, rows, cols, photoSize, bgColor, orientation, cutMarks, border }) => {
     const entries = Array(copies).fill({ url: photoUrl, bgColor });
-    printLayout(entries, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border);
+    printLayout(entries, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border, `Passport Photo Sheet Print (1 photo • ${photoSize || '35x45'})`, 1);
   };
 
   const handleExportPdfFromEditor = ({ photoUrl, copies, margin, paperSize, rows, cols, photoSize, bgColor, orientation, cutMarks, border }) => {
@@ -712,21 +746,14 @@ function App() {
     handleExportPdf({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border });
   };
 
-  const handlePrintBulk = async ({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border }) => {
-    const allowed = await consumeCredits({
-      type: 'passport',
-      count: 1,
-      description: `Passport Photo Bulk Print (${photoSize || '35x45'})`
-    });
-    if (!allowed) return;
-
+  const handlePrintBulk = ({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border }) => {
     const allEntries = [];
     photoList.forEach(p => {
       for (let i = 0; i < p.copies; i++) allEntries.push({ url: p.url, bgColor: p.bgColor });
     });
-    printLayout(allEntries, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border);
+    const photoCount = Math.max(1, photoList.length);
+    printLayout(allEntries, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border, `Passport Photo Bulk Print (${photoCount} photos • ${photoSize || '35x45'})`, photoCount);
   };
-
 
   const handleExportPdfBulk = ({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border }) => {
     handleExportPdf({ photos: photoList, margin, paperSize, rows, cols, photoSize, orientation, cutMarks, border });
@@ -795,49 +822,18 @@ function App() {
               <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
             </div>
 
-            {/* Active Universal Card Studio link */}
-            <button
-              type="button"
-              onClick={() => setCurrentWorkspace('card-studio')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
-                currentWorkspace === 'card-studio'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
-              }`}
-            >
-              <CreditCard className="w-4 h-4 text-cyan-400" />
+            <div className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-500 hover:text-slate-400 hover:bg-slate-900/40 font-medium text-sm transition-all cursor-not-allowed opacity-60">
+              <CreditCard className="w-4 h-4" />
               <span>Card Studio</span>
-              {currentWorkspace === 'card-studio' ? (
-                <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
-              ) : (
-                <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-cyan-950/80 rounded text-cyan-400 border border-cyan-800/40 font-bold">New</span>
-              )}
-            </button>
+              <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
+            </div>
           </nav>
 
         </div>
 
-        {/* Sidebar Bottom: Settings & User Profile */}
-        <div className="space-y-3 pt-4 border-t border-slate-900">
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 font-medium text-sm transition-all border border-slate-800/80 group"
-          >
-            <Settings2 className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-colors" />
-            <span>Print Settings</span>
-          </button>
-
-          {/* User badge */}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-900/50 border border-slate-800/60">
-            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs border border-slate-700">
-              <User size={14} className="text-cyan-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-200 truncate">Studio Workspace</p>
-              <p className="text-[10px] text-slate-500 truncate font-mono">300 DPI Engine</p>
-            </div>
-            <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
-          </div>
+        {/* Sidebar Bottom: Credit & Sync / Connect Widget */}
+        <div className="pt-4 border-t border-slate-900">
+          <CreditMeterBadge className="w-full" />
         </div>
       </aside>
 
@@ -877,50 +873,47 @@ function App() {
               </select>
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
-            <span className="text-[11px] font-mono text-cyan-400/90 px-2.5 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/40 font-semibold">
-              300 DPI • {currentCountryObj.standard || '35x45 mm'}
-            </span>
 
-            {/* AI Mode Selector: Normal vs 4K Old Photo Restore */}
+            {/* Switch button: Normal Photos & Restore Photo */}
             <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs ml-2">
               <button
                 type="button"
                 onClick={() => {
                   setRestoreVintageMode(false);
-                  setToast({ type: 'info', message: '📷 Normal Photo Studio Mode Active' });
+                  setToast({ type: 'info', message: '📷 Normal Photos Mode Active' });
                 }}
                 className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   !restoreVintageMode
                     ? 'bg-cyan-500 text-slate-950 shadow'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="Standard Digital Camera / Phone Portrait"
+                title="Normal Photos"
               >
                 <Camera size={13} />
-                <span>Normal Photo</span>
+                <span>Normal Photos</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setRestoreVintageMode(true);
-                  setToast({ type: 'success', message: '✨ AI 4K Old Photo Restoration Mode Active!' });
+                  setToast({ type: 'success', message: '✨ Restore Photo Mode Active!' });
                 }}
                 className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   restoreVintageMode
-                    ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black ring-1 ring-amber-300'
-                    : 'text-slate-400 hover:text-amber-300'
+                    ? 'bg-cyan-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-white'
                 }`}
-                title="AI 4K Restoration for Old Printed Photos, Handheld Snaps & Scans"
+                title="Restore Photo"
               >
-                <Sparkles size={13} className={restoreVintageMode ? 'text-slate-950' : 'text-amber-400'} />
-                <span>✨ 4K Old Photo Restore</span>
+                <Sparkles size={13} />
+                <span>Restore Photo</span>
               </button>
             </div>
           </div>
 
 
 
-          {/* Center/Right: Dynamic Processing Bar (ONLY when processing) + Quick Action Buttons */}
+          {/* Center/Right: Dynamic Processing Bar (ONLY when processing) + Action Buttons */}
           <div className="flex items-center gap-3">
             
             {/* Real-time Dynamic Progress Bar (Shown ONLY when processing) */}
@@ -940,29 +933,24 @@ function App() {
               </div>
             )}
 
-            {/* Credit Wallet Badge */}
-            <CreditMeterBadge />
+            {/* Print Settings Button (Passport Studio header) */}
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white font-semibold text-xs rounded-xl transition-all border border-slate-700 hover:border-slate-600 shadow-sm cursor-pointer group"
+              title="Print Settings"
+            >
+              <Settings2 size={14} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+              <span>Print Settings</span>
+            </button>
 
             {/* Quick Upload Button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-semibold text-xs rounded-xl transition-all border border-slate-700 hover:border-slate-600 shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 active:scale-95 text-slate-950 font-extrabold text-xs rounded-xl transition-all border border-cyan-400/40 shadow-md shadow-cyan-950/30 cursor-pointer"
               title="Upload Photos"
             >
-              <UploadCloud size={15} className="text-cyan-400" />
+              <UploadCloud size={15} className="text-slate-950" />
               <span>Upload Photos</span>
-            </button>
-
-
-            {/* Save Project Button */}
-            <button
-              onClick={handleSaveProject}
-              disabled={isSaving || processedPhotos.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed rounded-xl text-black font-bold text-xs transition-all shadow-md shadow-cyan-900/20 disabled:shadow-none border border-cyan-400/40 disabled:border-slate-800"
-              title="Save Project"
-            >
-              {isSaving ? <Loader2 size={14} className="animate-spin text-white" /> : <Save size={14} className="text-slate-950" />}
-              <span className={isSaving ? "text-white" : "text-slate-950 font-extrabold"}>{isSaving ? 'Saving…' : 'Save Project'}</span>
             </button>
           </div>
         </header>
@@ -983,14 +971,15 @@ function App() {
             isRefreshingQueue={isRefreshingQueue}
             deviceState={{
               ...deviceState,
-              centerCode: centerCode || deviceState?.centerCode || 'CSC-GR-6112',
-              centerName: connectedAccount || deviceState?.centerName || 'abhi Yadav'
+              centerCode: centerCode || deviceState?.centerCode || null,
+              centerName: connectedAccount || deviceState?.centerName || 'Counter Desk'
             }}
             onLoadJob={handleLoadOnlineJob}
             onDismissJob={handleDismissOnlineJob}
             onClearQueue={handleClearAllOnlineJobs}
             onRefresh={handleManualRefreshQueue}
             onOpenQrModal={() => setShowCounterQrModal(true)}
+            onOpenConnectModal={() => openConnectModal('Please connect your PrimeIDPro.online account to activate live Counter QR sync.')}
           />
 
           {/* Workspace Subheader: Ready Assets + Bulk Actions */}
@@ -1011,7 +1000,7 @@ function App() {
             {processedPhotos.length > 0 && (
               <button
                 onClick={() => setShowBulkModal(true)}
-                className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 px-4 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md shadow-cyan-900/20 active:scale-95 border border-cyan-300/40"
+                className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 px-4 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md shadow-cyan-900/20 active:scale-95 border border-cyan-300/40 cursor-pointer"
               >
                 <Layers className="w-3.5 h-3.5" />
                 <span>Bulk Sheet Actions {selectedPhotos.length > 0 ? `(${selectedPhotos.length})` : ''}</span>
@@ -1033,20 +1022,20 @@ function App() {
               >
                 <div className="w-16 h-16 bg-slate-900/90 rounded-2xl flex items-center justify-center mb-4 border border-slate-800 shadow-inner group">
                   {restoreVintageMode ? (
-                    <Sparkles className="text-amber-400 w-8 h-8 animate-pulse" />
+                    <Sparkles className="text-cyan-400 w-8 h-8 animate-pulse" />
                   ) : (
                     <UploadCloud className="text-cyan-400 w-8 h-8" />
                   )}
                 </div>
                 <h3 className="text-base font-bold text-slate-200 mb-1.5">
                   {restoreVintageMode
-                    ? 'Drop your old / vintage / scanned photo here'
+                    ? 'Drop your photo here or '
                     : 'Drop your portrait photo here or '}{' '}
                   <span className="text-cyan-400 underline underline-offset-4">browse files</span>
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md mb-4 leading-relaxed">
                   {restoreVintageMode
-                    ? '✨ AI 4K Mode: Automatically detects inner photo, removes hands/borders, de-ages yellowed hues, and boosts 4K clarity at 300 DPI.'
+                    ? 'Restore Photo Mode: Automatically detects inner photo, removes borders/hands, enhances facial details, and formats to 300 DPI.'
                     : 'Automatic AI background removal, MediaPipe face alignment, and 300 DPI biometric framing will be applied instantly.'}
                 </p>
 
@@ -1056,7 +1045,7 @@ function App() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setRestoreVintageMode(false);
-                      setToast({ type: 'info', message: '📷 Normal Photo Mode Selected' });
+                      setToast({ type: 'info', message: '📷 Normal Photos Mode Selected' });
                     }}
                     className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
                       !restoreVintageMode
@@ -1066,7 +1055,7 @@ function App() {
                   >
                     <div className="flex items-center gap-2 font-bold text-xs text-white">
                       <Camera size={15} className={!restoreVintageMode ? 'text-cyan-400' : 'text-slate-400'} />
-                      <span>Normal Photo Studio</span>
+                      <span>Normal Photos</span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
                       Digital camera or mobile portraits with 300 DPI biometric framing.
@@ -1077,20 +1066,20 @@ function App() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setRestoreVintageMode(true);
-                      setToast({ type: 'success', message: '✨ AI 4K Old Photo Restoration Mode Selected!' });
+                      setToast({ type: 'success', message: '✨ Restore Photo Mode Selected!' });
                     }}
                     className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
                       restoreVintageMode
-                        ? 'bg-amber-950/40 border-amber-500 shadow-md ring-2 ring-amber-500/20'
+                        ? 'bg-cyan-950/40 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
                         : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2 font-bold text-xs text-amber-300">
-                      <Sparkles size={15} className="text-amber-400" />
-                      <span>✨ 4K Old Photo Restore</span>
+                    <div className="flex items-center gap-2 font-bold text-xs text-white">
+                      <Sparkles size={15} className={restoreVintageMode ? 'text-cyan-400' : 'text-slate-400'} />
+                      <span>Restore Photo</span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Auto-detects paper prints, removes fingers/borders, & de-ages to 4K.
+                      Auto-detects paper prints, removes fingers/borders, & enhances clarity.
                     </p>
                   </div>
                 </div>
@@ -1101,14 +1090,10 @@ function App() {
                     e.stopPropagation();
                     fileInputRef.current?.click();
                   }}
-                  className={`px-8 py-3 rounded-2xl font-black text-xs shadow-xl transition-all flex items-center gap-2 cursor-pointer transform hover:scale-105 active:scale-95 ${
-                    restoreVintageMode
-                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 hover:from-amber-300 hover:to-amber-400 shadow-amber-500/20'
-                      : 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 hover:from-cyan-300 hover:to-blue-400 shadow-cyan-500/20'
-                  }`}
+                  className="px-8 py-3 rounded-2xl font-black text-xs shadow-xl transition-all flex items-center gap-2 cursor-pointer transform hover:scale-105 active:scale-95 bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 hover:from-cyan-300 hover:to-blue-400 shadow-cyan-500/20"
                 >
                   <Plus size={16} className="text-slate-950 font-bold" />
-                  <span>{restoreVintageMode ? 'Select Old Photo for 4K Restore' : 'Select Photos to Upload'}</span>
+                  <span>{restoreVintageMode ? 'Select Photo for Restoration' : 'Select Photos to Upload'}</span>
                 </button>
 
 
@@ -1234,8 +1219,8 @@ function App() {
         onClose={() => setShowCounterQrModal(false)}
         deviceState={{
           ...deviceState,
-          centerCode: centerCode || deviceState?.centerCode || 'CSC-GR-6112',
-          centerName: connectedAccount || deviceState?.centerName || 'abhi Yadav'
+          centerCode: centerCode || deviceState?.centerCode || null,
+          centerName: connectedAccount || deviceState?.centerName || 'Counter Desk'
         }}
       />
     </div>

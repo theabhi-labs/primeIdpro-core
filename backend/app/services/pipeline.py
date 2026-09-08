@@ -56,8 +56,8 @@ def detect_face_crop(
     # Edge Matting, Defringing and Anti-Halo
     refined_np = refine_edges_and_halo(np.array(transparent_crop))
     
-    # Natural lighting enhancement applied directly to the subject BEFORE background flattening
-    rgb_only = enhance_image_quality(refined_np[:, :, :3])
+    # Natural lighting enhancement and Auto White Balance applied directly to subject
+    rgb_only = enhance_image_quality(refined_np[:, :, :3], alpha_mask=refined_np[:, :, 3])
     subject_rgba = np.dstack([rgb_only, refined_np[:, :, 3]])
     refined_rgba = Image.fromarray(subject_rgba, mode="RGBA")
 
@@ -86,9 +86,10 @@ async def process_image_async(
     country_code: str = "india",
     bg_color: str = "white",
     restore_vintage: bool = False,
-    clarity_boost: float = 1.40,
-    denoise_level: float = 0.60,
-    color_vibrance: float = 1.15,
+    clarity_boost: float = 1.25,
+    denoise_level: float = 0.50,
+    color_vibrance: float = 1.08,
+    hair_depth: float = 1.30,
     face_mesh=None,
     face_cascade=None,
     alt_cascade=None
@@ -98,18 +99,20 @@ async def process_image_async(
         processing_status[image_id] = {"status": "processing", "progress": 10}
         original_path = uploaded_images[image_id]["original_path"]
 
-        final_path = os.path.join(PROCESSED_DIR, f"{image_id}_final.png")
-        transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_transparent.png")
-
-        processing_status[image_id]["progress"] = 30
+        # Paths
         nobg_path = os.path.join(PROCESSED_DIR, f"{image_id}_nobg.png")
-        success = await asyncio.to_thread(remove_background_lightweight, original_path, nobg_path)
-        if not success:
-            raise Exception("Background removal failed completely")
+        transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_transparent.png")
+        final_path = os.path.join(PROCESSED_DIR, f"{image_id}_final.png")
+
+        # Step 1: Remove background
+        processing_status[image_id]["progress"] = 20
+        bg_ok = await asyncio.to_thread(remove_background_lightweight, original_path, nobg_path)
+        if not bg_ok:
+            raise RuntimeError("Background removal failed")
 
         processing_status[image_id]["progress"] = 60
 
-        # Runs crop, alignment, defringing, edge quality, and biometric verification
+        # Step 2: Biometric Face detection, crop & auto-enhance
         is_valid, v_log, suggestions = await asyncio.to_thread(
             detect_face_crop,
             nobg_path,
@@ -123,6 +126,15 @@ async def process_image_async(
             alt_cascade
         )
 
+        # Preserve un-modified base transparent crop for repeatable tuning
+        base_transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_base_transparent.png")
+        try:
+            import shutil
+            shutil.copy2(transparent_path, base_transparent_path)
+            uploaded_images[image_id]["base_transparent_path"] = base_transparent_path
+        except Exception:
+            pass
+
         # Clean up temporary background-removed file
         if os.path.exists(nobg_path):
             try:
@@ -133,13 +145,15 @@ async def process_image_async(
         if restore_vintage:
             # Apply 4K Super-Resolution & Vintage De-aging directly to the transparent subject
             def _apply_4k():
-                t_img = Image.open(transparent_path).convert("RGBA")
+                src_path = base_transparent_path if os.path.exists(base_transparent_path) else transparent_path
+                t_img = Image.open(src_path).convert("RGBA")
                 vivid_np = restore_and_enhance_vintage_photo(
                     np.array(t_img),
                     clarity_boost=clarity_boost,
                     denoise_level=denoise_level,
                     color_vibrance=color_vibrance,
-                    auto_deage=True
+                    auto_deage=True,
+                    hair_depth=hair_depth
                 )
                 vivid_rgba = Image.fromarray(vivid_np, mode="RGBA")
                 vivid_rgba.save(transparent_path, "PNG", dpi=(300, 300))

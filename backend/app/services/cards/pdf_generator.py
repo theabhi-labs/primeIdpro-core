@@ -116,24 +116,22 @@ def draw_card_bitmap(
         )
 
         photo_placed = False
-        photo_path = None
+        p_url = None
         if record.processedPhoto and record.processedPhoto.processedUrl:
-            raw_p = record.processedPhoto.processedUrl.lstrip("/")
-            photo_path = os.path.join(APP_DIR, raw_p)
-            if not os.path.exists(photo_path):
-                photo_path = os.path.join(APP_DIR, "..", raw_p)
-        elif record.photo and record.photo.originalPath and os.path.exists(record.photo.originalPath):
-            photo_path = record.photo.originalPath
+            p_url = record.processedPhoto.processedUrl
+        elif record.photo and record.photo.originalPath:
+            p_url = record.photo.originalPath
 
-
-        if photo_path and os.path.exists(photo_path):
-            try:
-                p_img = Image.open(photo_path).convert("RGB")
-                p_img = p_img.resize((photo_box_w, photo_box_h), Image.Resampling.LANCZOS)
-                card.paste(p_img, (photo_box_x, photo_box_y))
-                photo_placed = True
-            except Exception as e:
-                logger.warning(f"Failed pasting photo {photo_path}: {e}")
+        if p_url:
+            from app.services.sheet.pdf_exporter import _load_photo_image
+            p_img = _load_photo_image(p_url)
+            if p_img:
+                try:
+                    p_rgb = p_img.convert("RGB").resize((photo_box_w, photo_box_h), Image.Resampling.LANCZOS)
+                    card.paste(p_rgb, (photo_box_x, photo_box_y))
+                    photo_placed = True
+                except Exception as e:
+                    logger.warning(f"Failed pasting photo {p_url}: {e}")
 
         if not photo_placed:
             draw.rectangle([(photo_box_x, photo_box_y), (photo_box_x + photo_box_w, photo_box_y + photo_box_h)], fill=(241, 245, 249))

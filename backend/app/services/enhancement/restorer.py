@@ -24,7 +24,8 @@ def run_4k_vintage_restoration(
     bg_color: str = "#FFFFFF",
     clarity_boost: float = 1.25,
     denoise_level: float = 0.50,
-    color_vibrance: float = 1.15,
+    color_vibrance: float = 1.08,
+    hair_depth: float = 1.30,
     face_mesh=None,
     face_cascade=None,
     alt_cascade=None,
@@ -35,8 +36,9 @@ def run_4k_vintage_restoration(
     2. Precision Biometric Headroom & Eye-Level Alignment.
     3. Anti-Halo Edge Refinement and Matting.
     4. Studio-Grade CLAHE, Paper Grain Removal, and Super-Resolution.
-    5. Natural Warm Skin Tone & Highlights Protection.
-    6. Seamless 300 DPI Studio Output Generation.
+    5. Hair & Eye Deep Black Anchoring to prevent faded/grayish hair.
+    6. Natural Warm Skin Tone & Highlights Protection.
+    7. Seamless 300 DPI Studio Output Generation.
     """
     temp_dir = os.path.dirname(output_final_path)
     temp_nobg = os.path.join(temp_dir, f"temp_nobg_{os.path.basename(output_final_path)}.png")
@@ -69,6 +71,7 @@ def run_4k_vintage_restoration(
             denoise_level=denoise_level,
             color_vibrance=color_vibrance,
             auto_deage=True,
+            hair_depth=hair_depth,
         )
         vivid_rgba = Image.fromarray(vivid_rgba_np, "RGBA")
         vivid_rgba.save(output_transparent_path, "PNG", dpi=(300, 300))

@@ -35,8 +35,12 @@ const PhotoCopyEditor = ({ photo, onClose, onPrint, onExportPdf, globalSettings 
     const finalPaperSize = useDefaultSettings ? settings.paperSize : localPaperSize;
     const finalOrientation = useDefaultSettings ? settings.orientation : 'Portrait';
 
+    const photoUrl = photo.editedVersion
+      ? (photo.processedUrl || photo.transparentUrl || photo.preview)
+      : (photo.transparentUrl || photo.processedUrl || photo.preview);
+
     return {
-      photoUrl: photo.transparentUrl || photo.processedUrl || photo.preview,
+      photoUrl,
       copies,
       margin: finalMargin,
       paperSize: finalPaperSize,
@@ -89,42 +93,83 @@ const PhotoCopyEditor = ({ photo, onClose, onPrint, onExportPdf, globalSettings 
         <div className="flex-1 overflow-auto p-8 custom-scrollbar">
           <div className="grid lg:grid-cols-2 gap-12">
 
-            {/* Left side: Live Asset Preview */}
-            <div className="space-y-6">
-              <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+            {/* Left side: Live Realistic Sheet Preview */}
+            <div className="flex flex-col items-center justify-between space-y-4">
+              <div className="w-full flex items-center justify-between px-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">Live Paper Sheet Preview</span>
+                </div>
+                <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-bold">
+                  {localPaperSize} ({localPaperSize === '4x6' ? '102×152 mm' : '210×297 mm'})
+                </span>
+              </div>
+
+              {/* Realistic White Paper Sheet Container */}
+              <div className="w-full flex items-center justify-center p-4 bg-slate-950/60 rounded-3xl border border-slate-800/80 min-h-[380px]">
                 <div
-                  className="relative rounded-3xl p-8 border border-slate-800 flex flex-col items-center justify-center min-h-[350px]"
-                  style={{ backgroundColor: photo.bgColor || '#0f172a' }}
+                  className="relative bg-white rounded shadow-[0_15px_35px_rgba(0,0,0,0.6)] border border-slate-300 overflow-hidden flex flex-col justify-start transition-all duration-300"
+                  style={{
+                    width: '100%',
+                    maxWidth: localPaperSize === '4x6' ? '240px' : '280px',
+                    aspectRatio: localPaperSize === '4x6' ? '101.6 / 152.4' : '210 / 297',
+                    padding: withoutMargins ? '4px' : `${Math.max(4, localMargin.top * 0.75)}px ${Math.max(4, localMargin.right * 0.75)}px ${Math.max(4, localMargin.bottom * 0.75)}px ${Math.max(4, localMargin.left * 0.75)}px`,
+                  }}
                 >
-                  <div className="absolute top-4 left-4 flex items-center gap-2">
-                    <Sparkles size={14} className="text-cyan-400" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Master Biometric Asset</span>
-                  </div>
-                  <img
-                    src={photo.transparentUrl || photo.processedUrl || photo.preview}
-                    alt="Selected"
-                    className="max-w-[200px] h-auto object-contain rounded-xl shadow-2xl border border-slate-800 ring-8 ring-slate-900/50"
-                  />
-                  <div className="mt-6 px-4 py-1.5 bg-slate-900/90 rounded-full border border-cyan-500/30 text-[11px] text-cyan-300 font-mono font-semibold">
-                    {photoSize === '2x2' ? '50.8 × 50.8 mm (600 × 600 px @ 300 DPI)' : '35 × 45 mm (413 × 531 px @ 300 DPI)'}
+                  {/* Photo Grid on Paper */}
+                  <div
+                    className="grid gap-[2px] w-full"
+                    style={{
+                      gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {Array.from({ length: Math.min(copies, cols * (rows || 8)) }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`relative overflow-hidden ${border ? 'border border-slate-400/80' : ''}`}
+                        style={{
+                          aspectRatio: photoSize === '2x2' ? '1 / 1' : '35 / 45',
+                          backgroundColor: photo.bgColor || '#FFFFFF',
+                        }}
+                      >
+                        <img
+                          src={photo.editedVersion ? (photo.processedUrl || photo.transparentUrl || photo.preview) : (photo.transparentUrl || photo.processedUrl || photo.preview)}
+                          alt="passport"
+                          className="w-full h-full object-cover"
+                        />
+                        {cutMarks && (
+                          <div className="absolute inset-0 pointer-events-none border border-dashed border-slate-500/50" />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
 
+              {/* 100% Actual Scale & 300 DPI Guarantee Badge */}
+              <div className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-900/90 border border-cyan-500/30 text-xs">
+                <div className="flex items-center gap-1.5 text-cyan-400 font-extrabold">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>100% Actual Scale</span>
+                </div>
+                <span className="text-slate-400 font-mono text-[11px] font-semibold">
+                  {photoSize === '2x2' ? '50.8×50.8 mm' : '35×45 mm'} • 300 DPI
+                </span>
+              </div>
+
               {/* Stats Card */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sheet Size</span>
-                  <span className="text-sm font-mono font-bold text-white">{localPaperSize}</span>
+              <div className="grid grid-cols-3 gap-3 w-full">
+                <div className="bg-slate-900/50 p-3 rounded-2xl border border-slate-800 text-center">
+                  <span className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Sheet Format</span>
+                  <span className="text-xs font-mono font-bold text-white">{localPaperSize}</span>
                 </div>
-                <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Layout</span>
-                  <span className="text-sm font-mono font-bold text-white">{cols} Cols</span>
+                <div className="bg-slate-900/50 p-3 rounded-2xl border border-slate-800 text-center">
+                  <span className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Grid Columns</span>
+                  <span className="text-xs font-mono font-bold text-white">{cols} Cols</span>
                 </div>
-                <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Pages</span>
-                  <span className="text-sm font-mono font-bold text-cyan-400">{pagesNeeded}</span>
+                <div className="bg-slate-900/50 p-3 rounded-2xl border border-slate-800 text-center">
+                  <span className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Est. Pages</span>
+                  <span className="text-xs font-mono font-bold text-cyan-400">{pagesNeeded}</span>
                 </div>
               </div>
             </div>

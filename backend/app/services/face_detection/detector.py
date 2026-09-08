@@ -89,12 +89,28 @@ def align_and_crop_face(
     W = preset.get("target_w_px", int(round(width_mm / 25.4 * dpi)))
     H = preset.get("target_h_px", int(round(height_mm / 25.4 * dpi)))
 
+    close_mesh = False
     if face_mesh is None:
-        logger.warning("FaceMesh not provided, falling back to Haar Cascade")
+        try:
+            import mediapipe as mp
+            face_mesh = mp.solutions.face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=2,
+                refine_landmarks=True,
+                min_detection_confidence=0.5
+            )
+            close_mesh = True
+        except Exception as e:
+            logger.warning(f"Could not load MediaPipe FaceMesh on-demand: {e}")
+
+    if face_mesh is None:
+        logger.warning("FaceMesh not available, falling back to Haar Cascade")
         return align_crop_cascade_fallback(img_np, country_code, dpi, face_cascade, alt_cascade)
 
     img_rgb = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB) if img_np.shape[2] == 4 else cv2.cvtColor(img_np, cv2.COLOR_RGB2RGB)
     results = face_mesh.process(img_rgb)
+    if close_mesh and face_mesh:
+        face_mesh.close()
 
     if not results.multi_face_landmarks:
         logger.warning("No face landmarks detected, falling back to Haar Cascade")
@@ -197,13 +213,37 @@ def align_and_crop_face(
     dst_x = W / 2.0 + center_shift[0] * W
     dst_crown_y = H * target_top_headroom + center_shift[1] * H
 
-    # 5. Affine Transformation Matrix
-    M = cv2.getRotationMatrix2D((float(eye_mid[0]), float(eye_mid[1])), float(angle_deg), float(scale))
-    M[0, 2] += (dst_x - (eye_mid[0] + (face_cx - eye_mid[0]) * scale))
-    M[1, 2] += (dst_crown_y - (eye_mid[1] + (crown_y - eye_mid[1]) * scale))
+    # 5. Intelligent Canvas Padding to Prevent Flat Head / Shoulder Chopping
+    pad_top = int(max(h * 0.25, 100))
+    pad_bot = int(max(h * 0.25, 100))
+    pad_left = int(max(w * 0.25, 100))
+    pad_right = int(max(w * 0.25, 100))
+
+    if len(img_np.shape) == 3 and img_np.shape[2] == 4:
+        img_padded = cv2.copyMakeBorder(
+            img_np, pad_top, pad_bot, pad_left, pad_right,
+            borderType=cv2.BORDER_CONSTANT,
+            value=(0, 0, 0, 0)
+        )
+    else:
+        img_padded = cv2.copyMakeBorder(
+            img_np, pad_top, pad_bot, pad_left, pad_right,
+            borderType=cv2.BORDER_REPLICATE
+        )
+
+    # Shift source coordinates to match padded image space
+    src_eye_mid_x = float(eye_mid[0] + pad_left)
+    src_eye_mid_y = float(eye_mid[1] + pad_top)
+    src_face_cx = float(face_cx + pad_left)
+    src_crown_y = float(crown_y + pad_top)
+
+    # 6. Affine Transformation Matrix on Padded Canvas
+    M = cv2.getRotationMatrix2D((src_eye_mid_x, src_eye_mid_y), float(angle_deg), float(scale))
+    M[0, 2] += (dst_x - (src_eye_mid_x + (src_face_cx - src_eye_mid_x) * scale))
+    M[1, 2] += (dst_crown_y - (src_eye_mid_y + (src_crown_y - src_eye_mid_y) * scale))
 
     warped_np = cv2.warpAffine(
-        img_np, M, (W, H),
+        img_padded, M, (W, H),
         flags=cv2.INTER_LANCZOS4,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=(0, 0, 0, 0)

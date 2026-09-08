@@ -13,7 +13,7 @@ export function CreditProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectedAccount, setConnectedAccount] = useState(null);
   const [licenseKey, setLicenseKey] = useState(null);
-  const [centerCode, setCenterCode] = useState('CSC-GR-6112');
+  const [centerCode, setCenterCode] = useState('');
   const [tier, setTier] = useState('UNCONNECTED');
   const [rates, setRates] = useState({ passportPhotoPrint: 2, idCardPrintPerUnit: 5 });
   const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +31,7 @@ export function CreditProvider({ children }) {
         setIsConnected(connected);
         setConnectedAccount(data.connectedAccount || null);
         setLicenseKey(data.licenseKey || null);
-        if (data.centerCode) setCenterCode(data.centerCode);
+        setCenterCode(data.centerCode || '');
         setTier(data.tier || 'UNCONNECTED');
         if (data.rates) setRates(data.rates);
 
@@ -69,9 +69,31 @@ export function CreditProvider({ children }) {
   };
 
   /**
-   * Safe credit deduction checker.
-   * If balance is sufficient, deducts credits and returns true.
-   * If insufficient or unconnected, opens the connect modal and returns false.
+   * Pre-flight balance check without deducting immediately.
+   * Returns true if balance is sufficient, false and opens recharge modal if insufficient.
+   */
+  const checkCreditsSufficient = ({ type, count = 1 }) => {
+    if (!isConnected) {
+      openConnectModal('Account Connection Required! Please connect your PrimeIDPro.online account to print or download.');
+      return false;
+    }
+
+    const required = type === 'passport' ? rates.passportPhotoPrint * count : rates.idCardPrintPerUnit * count;
+
+    if (credits < required) {
+      openConnectModal(
+        `Insufficient Token Balance! ${required} tokens required (${
+          type === 'passport' ? `${count} Photo${count > 1 ? 's' : ''}` : `${count} ID Card${count > 1 ? 's' : ''}`
+        }). Available: ${credits} tokens. Please recharge on PrimeIDPro.online to continue.`
+      );
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * Safe credit deduction checker and executor.
+   * Deducts credits and updates live state.
    */
   const consumeCredits = async ({ type, count = 1, description = '' }) => {
     if (!isConnected) {
@@ -84,7 +106,7 @@ export function CreditProvider({ children }) {
     if (credits < required) {
       openConnectModal(
         `Insufficient Token Balance! ${required} tokens required (${
-          type === 'passport' ? `${count} Passport Sheet` : `${count} ID Card${count > 1 ? 's' : ''}`
+          type === 'passport' ? `${count} Photo${count > 1 ? 's' : ''}` : `${count} ID Card${count > 1 ? 's' : ''}`
         }). Available: ${credits} tokens. Please recharge on PrimeIDPro.online to continue.`
       );
       return false;
@@ -107,13 +129,40 @@ export function CreditProvider({ children }) {
 
   const connectAccount = async ({ accountId, licenseKey }) => {
     const res = await connectOnlineAccountApi({ accountId, licenseKey });
+    if (res?.centerCode) {
+      setCenterCode(res.centerCode);
+    }
+    if (window.primeIdPro?.device?.connectCredentials) {
+      try {
+        await window.primeIdPro.device.connectCredentials({
+          email: accountId,
+          password: licenseKey,
+        });
+      } catch (e) {
+        console.warn('Native device connect credentials warning:', e);
+      }
+    }
+    if (window.primeIdPro?.poller?.trigger) {
+      try {
+        await window.primeIdPro.poller.trigger();
+      } catch (e) {}
+    }
     await refreshCredits();
     setShowConnectModal(false);
     return res;
   };
 
   const disconnectAccount = async () => {
+    if (window.primeIdPro?.device?.unpair) {
+      try {
+        await window.primeIdPro.device.unpair();
+      } catch (e) {}
+    }
     const res = await disconnectOnlineAccountApi();
+    setCenterCode('');
+    setIsConnected(false);
+    setCredits(0);
+    setConnectedAccount(null);
     await refreshCredits();
     return res;
   };
@@ -134,6 +183,7 @@ export function CreditProvider({ children }) {
         openConnectModal,
         closeConnectModal,
         refreshCredits,
+        checkCreditsSufficient,
         consumeCredits,
         connectAccount,
         disconnectAccount,

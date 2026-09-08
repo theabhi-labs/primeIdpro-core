@@ -1,31 +1,28 @@
 [tool.pyright]
-venvPath = "backend"
+venvPath = "."
 venv = ".venv"
 extraPaths = [
-    "backend",
-    "backend/app",
-    "backend/.venv/Lib/site-packages",
+    ".",
+    "app",
     ".venv/Lib/site-packages"
 ]
 reportMissingImports = "none"
 reportMissingTypeStubs = "none"
 
 [tool.pyrefly]
-project_roots = ["backend", "."]
+project_roots = ["."]
 search_paths = [
-    "backend",
-    "backend/app",
-    "backend/.venv/Lib/site-packages",
+    ".",
+    "app",
     ".venv/Lib/site-packages"
 ]
 extraPaths = [
-    "backend",
-    "backend/app",
-    "backend/.venv/Lib/site-packages",
+    ".",
+    "app",
     ".venv/Lib/site-packages"
 ]
-python_interpreter = "backend/.venv/Scripts/python.exe"
-pythonPath = "backend/.venv/Scripts/python.exe"
-venv = "backend/.venv"
+python_interpreter = ".venv/Scripts/python.exe"
+pythonPath = ".venv/Scripts/python.exe"
+venv = ".venv"
 disabled_rules = ["unresolved-import", "missing-import", "uninitialized-variable", "possibly-unbound"]
 disabledRules = ["unresolved-import", "missing-import", "uninitialized-variable", "possibly-unbound"]

@@ -1,8 +1,8 @@
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw  # pyrefly: ignore [missing-import]
 import os
 import logging
 from datetime import datetime
-from app.core.config import settings
+from app.core.config import settings  # pyrefly: ignore [missing-import]
 
 # Add logger
 logger = logging.getLogger(__name__)

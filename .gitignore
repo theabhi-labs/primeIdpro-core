@@ -172,4 +172,6 @@ logs/
 *.tmp
 *.temp
 backend/test_*
-backend/scratch_*
+backend/scratch_*
+*license_wallet.json
+*.sys_machine.lock

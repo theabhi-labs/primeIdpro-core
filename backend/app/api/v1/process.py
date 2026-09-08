@@ -29,14 +29,15 @@ async def recolor_image(image_id: str, bg_color: str = Form(...)):
 async def restore_4k_enhancement(
     image_id: str,
     bg_color: str = Form("white"),
-    clarity_boost: float = Form(1.40),
-    denoise_level: float = Form(0.60),
-    color_vibrance: float = Form(1.15),
-    auto_deage: bool = Form(True)
+    clarity_boost: float = Form(1.25),
+    denoise_level: float = Form(0.50),
+    color_vibrance: float = Form(1.08),
+    auto_deage: bool = Form(True),
+    hair_depth: float = Form(1.30)
 ):
     """
-    Applies real-time 4K AI Super-Resolution, Denoising, and Vintage De-aging
-    to an existing image asset.
+    Applies real-time 4K AI Super-Resolution, Denoising, Hair & Eye Deep Black Retention,
+    and Vintage De-aging to an existing image asset.
     """
     if image_id not in uploaded_images:
         raise HTTPException(404, "Image not found")
@@ -45,17 +46,21 @@ async def restore_4k_enhancement(
     if not transparent_path or not os.path.exists(transparent_path):
         raise HTTPException(409, "Transparent asset not ready")
 
-    norm_bg = validate_and_normalize_color(bg_color)
-    rgba = Image.open(transparent_path).convert("RGBA")
+    base_transparent_path = uploaded_images[image_id].get("base_transparent_path")
+    src_path = base_transparent_path if (base_transparent_path and os.path.exists(base_transparent_path)) else transparent_path
 
-    # Enhance transparent RGBA subject directly to prevent background color flattening
+    norm_bg = validate_and_normalize_color(bg_color)
+    rgba = Image.open(src_path).convert("RGBA")
+
+    # Enhance transparent RGBA subject directly with landmark-guided 4K super-enhancement
     rgba_np = np.array(rgba)
     vivid_rgba_np = restore_and_enhance_vintage_photo(
         rgba_np,
         clarity_boost=float(clarity_boost),
         denoise_level=float(denoise_level),
         color_vibrance=float(color_vibrance),
-        auto_deage=bool(auto_deage)
+        auto_deage=bool(auto_deage),
+        hair_depth=float(hair_depth)
     )
     vivid_rgba = Image.fromarray(vivid_rgba_np, "RGBA")
     vivid_rgba.save(transparent_path, "PNG", dpi=(300, 300))
@@ -65,10 +70,11 @@ async def restore_4k_enhancement(
     final_path = uploaded_images[image_id]["processed_path"]
     flat_rgb.save(final_path, "PNG", dpi=(300, 300))
 
-
     timestamp = int(time.time())
     processed_url = f"/processed/{image_id}_final.png?t={timestamp}"
+    transparent_url = f"/processed/{image_id}_transparent.png?t={timestamp}"
     uploaded_images[image_id]["processed_url"] = processed_url
+    uploaded_images[image_id]["transparent_url"] = transparent_url
     uploaded_images[image_id]["is_vintage_restored"] = True
 
     return {
@@ -76,12 +82,115 @@ async def restore_4k_enhancement(
         "data": {
             "image_id": image_id,
             "processed_url": processed_url,
+            "transparent_url": transparent_url,
             "clarity_boost": clarity_boost,
             "denoise_level": denoise_level,
             "color_vibrance": color_vibrance,
+            "hair_depth": hair_depth,
             "message": "AI 4K Super-Resolution & Vintage Restoration applied successfully!"
         }
     }
+
+
+_magic_bg_in_flight = set()
+
+@router.post("/magic-ai-bg/{image_id}")
+async def magic_ai_bg_fix(
+    image_id: str,
+    bg_color: str = Form("white")
+):
+    """
+    On-Demand Magic Pen / Magic AI Background Fix:
+    1. Multi-click & spam protection (prevents redundant duplicate cloud calls).
+    2. Runs high-precision Cloud RMBG-2.0 if available, with automatic high-fidelity local fallback.
+    3. Aligns biometric crop, decontaminates edge colors, and re-flattens on the chosen background.
+    """
+    if image_id not in uploaded_images:
+        raise HTTPException(404, "Image not found")
+
+    if image_id in _magic_bg_in_flight:
+        raise HTTPException(429, "Magic AI processing is already in progress for this photo. Please wait a moment.")
+
+    _magic_bg_in_flight.add(image_id)
+    try:
+        from app.core.config import PROCESSED_DIR
+        from app.services.face_detection.detector import align_and_crop_face
+        from app.services.background.remover import remove_background_lightweight
+        from app.services.enhancement.enhancer import refine_edges_and_halo
+
+        original_path = uploaded_images[image_id]["original_path"]
+        if not os.path.exists(original_path):
+            raise HTTPException(404, "Original image file not found")
+
+        temp_magic_nobg = os.path.join(PROCESSED_DIR, f"{image_id}_magic_nobg.png")
+        norm_bg = validate_and_normalize_color(bg_color)
+
+        provider = "local_enhanced"
+        # 1. Attempt Cloud AI RMBG-2.0
+        try:
+            from app.services.background.cloud_remover import remove_background_rmbg2_sync
+            if remove_background_rmbg2_sync(original_path, temp_magic_nobg):
+                if os.path.exists(temp_magic_nobg):
+                    check = Image.open(temp_magic_nobg)
+                    if check.mode == "RGBA":
+                        provider = "cloud_rmbg2"
+        except Exception:
+            pass
+
+        # 2. Fallback to Local isnet-general-use if cloud was not used
+        if provider != "cloud_rmbg2":
+            ok = remove_background_lightweight(original_path, temp_magic_nobg)
+            if not ok or not os.path.exists(temp_magic_nobg):
+                raise HTTPException(500, "Background segmentation failed")
+
+        nobg_pil = Image.open(temp_magic_nobg).convert("RGBA")
+        country_code = uploaded_images[image_id].get("country_code", "india")
+
+        # 3. Biometric Crop Alignment & Edge Decontamination
+        cropped_rgba, metrics = align_and_crop_face(nobg_pil, country_code=country_code, dpi=300)
+        refined_np = refine_edges_and_halo(np.array(cropped_rgba))
+        refined_rgba = Image.fromarray(refined_np, "RGBA")
+
+        # 4. Update transparent and base_transparent assets
+        transparent_path = uploaded_images[image_id].get("transparent_path") or os.path.join(PROCESSED_DIR, f"{image_id}_transparent.png")
+        base_transparent_path = os.path.join(PROCESSED_DIR, f"{image_id}_base_transparent.png")
+        final_path = uploaded_images[image_id].get("processed_path") or os.path.join(PROCESSED_DIR, f"{image_id}_final.png")
+
+        refined_rgba.save(transparent_path, "PNG", dpi=(300, 300))
+        refined_rgba.save(base_transparent_path, "PNG", dpi=(300, 300))
+
+        # 5. Flatten onto selected background
+        flat_rgb = flatten_onto_bg(refined_rgba, norm_bg, refined_rgba.size)
+        flat_rgb.save(final_path, "PNG", dpi=(300, 300))
+
+        # Cleanup temporary file
+        if os.path.exists(temp_magic_nobg):
+            try:
+                os.remove(temp_magic_nobg)
+            except Exception:
+                pass
+
+        timestamp = int(time.time())
+        processed_url = f"/processed/{image_id}_final.png?t={timestamp}"
+        transparent_url = f"/processed/{image_id}_transparent.png?t={timestamp}"
+        uploaded_images[image_id]["processed_url"] = processed_url
+        uploaded_images[image_id]["transparent_url"] = transparent_url
+        uploaded_images[image_id]["base_transparent_path"] = base_transparent_path
+
+        msg = "✨ Magic AI Cut applied successfully!" if provider == "cloud_rmbg2" else "✨ Ultra-precision edge refinement applied!"
+
+        return {
+            "success": True,
+            "data": {
+                "image_id": image_id,
+                "provider": provider,
+                "processed_url": processed_url,
+                "transparent_url": transparent_url,
+                "message": msg
+            }
+        }
+    finally:
+        _magic_bg_in_flight.discard(image_id)
 
 
 

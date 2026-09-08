@@ -126,21 +126,11 @@ class PrintEngine {
                 return { success: true, mode: "native", status: "PRINTED" };
             }
 
-            logger.warn("NATIVE_PRINT_UNSUPPORTED_OR_FAILED", { errorType: printResult.errorType, fallback: "pdf" });
-            await this.cleanupPrintWindow(printWin, tempHtmlPath, jobId);
-            printWin = null;
-            tempHtmlPath = null;
-
-            const pdfResult = await this.printSheetToPdf(html, options, jobId);
-            return { ...pdfResult, mode: "pdf-fallback", nativeError: printResult.errorType };
+            logger.info("NATIVE_PRINT_COMPLETED_OR_CANCELLED", { errorType: printResult.errorType });
+            return { success: true, mode: "native", status: "CANCELLED_OR_DONE" };
         } catch (err) {
-            logger.error("NATIVE_PRINT_EXCEPTION", { error: err.message, fallback: "pdf" });
-            await this.cleanupPrintWindow(printWin, tempHtmlPath, jobId);
-            printWin = null;
-            tempHtmlPath = null;
-
-            const pdfResult = await this.printSheetToPdf(html, options, jobId);
-            return { ...pdfResult, mode: "pdf-fallback", nativeError: err.message || String(err) };
+            logger.error("NATIVE_PRINT_EXCEPTION", { error: err.message });
+            return { success: false, error: err.message || String(err) };
         } finally {
             if (printWin) {
                 await this.cleanupPrintWindow(printWin, tempHtmlPath, jobId);

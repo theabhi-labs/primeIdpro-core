@@ -27,10 +27,11 @@ export default function LiveKioskGallery({
   onClearQueue,
   onRefresh,
   onOpenQrModal,
+  onOpenConnectModal,
 }) {
-  const isBound = deviceState?.isBound || deviceState?.status === 'ACTIVE';
-  const centerCode = deviceState?.centerCode || 'CSC-GR-6112';
-  const centerName = deviceState?.centerName || 'Front Desk';
+  const isConnected = Boolean(deviceState?.centerCode || (deviceState?.isBound && deviceState?.status === 'ACTIVE'));
+  const centerCode = deviceState?.centerCode || 'UNCONNECTED';
+  const centerName = deviceState?.centerName || 'Counter Desk';
 
   return (
     <div className="mb-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-cyan-500/40 shadow-[0_0_35px_rgba(6,182,212,0.15)] flex flex-col shrink-0 backdrop-blur-xl transition-all overflow-hidden">
@@ -53,35 +54,39 @@ export default function LiveKioskGallery({
 
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
             <span className="text-slate-500">Center:</span>
-            <span className="font-mono font-bold text-cyan-400">{centerCode}</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-300 truncate max-w-[150px]">{centerName}</span>
+            <span className={`font-mono font-bold ${isConnected && centerCode !== 'UNCONNECTED' ? 'text-cyan-400' : 'text-amber-400'}`}>
+              {centerCode}
+            </span>
+            {isConnected && centerName && (
+              <>
+                <span className="text-slate-600">•</span>
+                <span className="text-slate-300 truncate max-w-[150px]">{centerName}</span>
+              </>
+            )}
           </div>
 
           {onlineJobs.length > 0 ? (
             <span className="px-2.5 py-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-[10px] font-black rounded-full uppercase shadow-sm">
               {onlineJobs.length} {onlineJobs.length === 1 ? 'Order' : 'Orders'} Waiting
             </span>
-          ) : (
+          ) : isConnected && centerCode !== 'UNCONNECTED' ? (
             <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded-full">
               🟢 Live & Ready
             </span>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenConnectModal}
+              className="px-2.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded-full cursor-pointer transition-colors"
+              title="Click to connect your PrimeIDPro.online account"
+            >
+              🔑 Connect Account
+            </button>
           )}
         </div>
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Show Counter QR Modal button */}
-          <button
-            type="button"
-            onClick={onOpenQrModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-cyan-950/40 cursor-pointer"
-            title="Display QR code for customers to scan"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>📱 Show Counter QR</span>
-          </button>
-
           {/* Clear Queue (if orders exist) */}
           {onlineJobs.length > 0 && (
             <button
@@ -148,35 +153,28 @@ export default function LiveKioskGallery({
                       <div className="w-8 h-8 rounded-full bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center text-xs font-bold text-cyan-300 uppercase">
                         {customerName ? customerName.slice(0, 2) : 'QR'}
                       </div>
-                      <span className="text-[8px] text-slate-400 font-mono uppercase tracking-wider">PHOTO</span>
+                      <span className="text-[9px] font-bold text-slate-400">Order #{orderCode}</span>
                     </div>
-                    <span className="absolute bottom-0 inset-x-0 bg-slate-950/90 text-cyan-300 text-[10px] font-black text-center py-0.5 border-t border-cyan-500/20">
-                      {totalCopies} Pcs
-                    </span>
                   </div>
 
-                  {/* Order & Customer Details */}
+                  {/* Customer & Order Details */}
                   <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
                     <div className="flex items-center justify-between gap-1.5">
-                      <h4 className="text-xs font-bold text-white truncate max-w-[150px] group-hover:text-cyan-300 transition-colors">
-                        {customerName}
-                      </h4>
-                      <div className="flex items-center gap-1">
-                        <span className="px-1.5 py-0.5 bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold rounded">
-                          #{orderCode}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => onDismissJob(job.id, e)}
-                          className="p-1 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-70 group-hover:opacity-100"
-                          title="Dismiss order"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span className="font-bold text-white text-sm truncate">{customerName}</span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => onDismissJob(job.id, e)}
+                        className="p-1 text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-800 transition-colors"
+                        title="Dismiss order"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
 
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 my-1 truncate">
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400 font-medium truncate mt-0.5">
                       {customerPhone && <span>{customerPhone} •</span>}
                       <span className="text-slate-300 truncate">{templateName}</span>
                     </div>
@@ -222,21 +220,32 @@ export default function LiveKioskGallery({
                 <Camera className="w-4 h-4" />
               </div>
               <div>
-                <span className="font-bold text-white">Live Kiosk Active</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white">Live Kiosk Active</span>
+                  {(!isConnected || centerCode === 'UNCONNECTED') && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                      🔑 Connect Account for Live QR
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   Customers scan your counter QR code on their phones ➔ their portrait photos appear here directly ready for 1-click loading & 300 DPI printing.
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onOpenQrModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-cyan-950/40 shrink-0 cursor-pointer"
-            >
-              <QrCode size={14} />
-              <span>Show Counter QR</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {(!isConnected || centerCode === 'UNCONNECTED') && onOpenConnectModal && (
+                <button
+                  type="button"
+                  onClick={onOpenConnectModal}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-amber-950/40 shrink-0 cursor-pointer"
+                >
+                  <KeyRound size={14} />
+                  <span>🔑 Connect Account</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

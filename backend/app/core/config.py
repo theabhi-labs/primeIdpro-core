@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     passport_standard: str = "35x45"
     target_dpi: int = 300
 
+    # RMBG-2.0 Cloud AI Settings
+    rmbg_enabled: bool = True
+    rmbg_provider: str = os.environ.get("RMBG_PROVIDER", "replicate")  # "replicate" | "custom" | "offline"
+    replicate_api_token: str = os.environ.get("REPLICATE_API_TOKEN", "")
+    bria_api_key: str = os.environ.get("BRIA_API_KEY", "")
+    custom_rmbg_endpoint: str = os.environ.get("RMBG_CUSTOM_ENDPOINT", "")
+
     # Security & CORS
     secret_key: str = "primeidpro-secret-key"
     cors_origins: Union[str, List[str]] = "*"

@@ -360,6 +360,9 @@ async function runTests() {
         assert.ok(diag.disk);
     });
 
+    // Clean up test device state so production state is not polluted
+    require("../src/device/deviceManager").deviceManager.unpair();
+
     console.log("\n==================================================");
     console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
     console.log("==================================================");

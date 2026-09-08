@@ -1,8 +1,8 @@
 import logging
-import cv2
-import numpy as np
-from PIL import Image
-from app.services.resize.presets import COUNTRY_PRESETS
+import cv2  # pyrefly: ignore [missing-import]
+import numpy as np  # pyrefly: ignore [missing-import]
+from PIL import Image  # pyrefly: ignore [missing-import]
+from app.services.resize.presets import COUNTRY_PRESETS  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger("primeidpro.face_fallbacks")
 
@@ -11,11 +11,11 @@ def center_crop_fallback(img_np: np.ndarray, country_code: str, dpi: int):
     """Last resort center crop if all face detection fails."""
     h, w = img_np.shape[:2]
     preset = COUNTRY_PRESETS.get(country_code.lower(), COUNTRY_PRESETS["india"])
-    W = preset.get("target_w_px", int(round(preset["width_mm"] / 25.4 * dpi)))
-    H = preset.get("target_h_px", int(round(preset["height_mm"] / 25.4 * dpi)))
+    W = int(preset.get("target_w_px") or round(float(preset["width_mm"]) / 25.4 * dpi))
+    H = int(preset.get("target_h_px") or round(float(preset["height_mm"]) / 25.4 * dpi))
 
-    target_ratio = W / H
-    img_ratio = w / h
+    target_ratio = float(W) / float(H)
+    img_ratio = float(w) / float(h)
 
     if img_ratio > target_ratio:
         crop_h = h
@@ -28,7 +28,7 @@ def center_crop_fallback(img_np: np.ndarray, country_code: str, dpi: int):
     left = cx - crop_w / 2.0
     top = cy - crop_h / 2.0
 
-    scale = W / crop_w
+    scale = float(W) / float(crop_w)
     M = np.float32([
         [scale, 0, -left * scale],
         [0, scale, -top * scale]
@@ -78,14 +78,14 @@ def align_crop_cascade_fallback(img_np: np.ndarray, country_code: str, dpi: int,
     estimated_head_height = max(estimated_chin_y - estimated_crown_y, 10.0)
 
     preset = COUNTRY_PRESETS.get(country_code.lower(), COUNTRY_PRESETS["india"])
-    W = preset.get("target_w_px", int(round(preset["width_mm"] / 25.4 * dpi)))
-    H = preset.get("target_h_px", int(round(preset["height_mm"] / 25.4 * dpi)))
+    W = int(preset.get("target_w_px") or round(float(preset["width_mm"]) / 25.4 * dpi))
+    H = int(preset.get("target_h_px") or round(float(preset["height_mm"]) / 25.4 * dpi))
 
-    target_head_ratio = preset.get("head_height_ratio", 0.58)
-    target_top_headroom = preset.get("top_headroom_ratio", 0.12)
+    target_head_ratio = float(preset.get("head_height_ratio", 0.58))
+    target_top_headroom = float(preset.get("top_headroom_ratio", 0.12))
 
     target_head_px = H * target_head_ratio
-    scale = target_head_px / estimated_head_height
+    scale = float(target_head_px) / float(estimated_head_height)
 
     dst_x = W / 2.0
     dst_crown_y = H * target_top_headroom

@@ -32,6 +32,7 @@ const primeIdProAPI = {
     device: {
         getStatus: () => ipcRenderer.invoke("device:status"),
         pair: (payload) => ipcRenderer.invoke("device:pair", payload),
+        connectCredentials: (payload) => ipcRenderer.invoke("device:connectCredentials", payload),
         unpair: () => ipcRenderer.invoke("device:unpair"),
         bind: (payload) => ipcRenderer.invoke("device:bind", payload),
         revoke: () => ipcRenderer.invoke("device:revoke"),

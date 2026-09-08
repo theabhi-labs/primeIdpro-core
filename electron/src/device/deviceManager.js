@@ -50,9 +50,9 @@ class DeviceManager {
         try {
             const fs = require("fs");
             const path = require("path");
+            const appDataDir = process.env.APPDATA || process.env.USERPROFILE || "";
             const walletPaths = [
-                path.join(__dirname, "../../../backend/app/processed/license_wallet.json"),
-                path.join(process.env.APPDATA || "", "PrimeIDPro", "processed", "license_wallet.json")
+                path.join(appDataDir, "PrimeIDPro", "license_wallet.json")
             ];
             for (const wp of walletPaths) {
                 if (fs.existsSync(wp)) {
@@ -75,13 +75,15 @@ class DeviceManager {
                 centerId: null,
                 deviceId: null,
                 centerName: centerMeta.centerName || null,
-                centerCode: centerMeta.centerCode || "CSC-GR-6112",
-                walletBalance: centerMeta.walletBalance ?? 500,
+                centerCode: centerMeta.centerCode || null,
+                walletBalance: centerMeta.walletBalance ?? 0,
                 isBound: false,
                 boundAt: null,
                 lastSeen: null
             };
         }
+
+        const isBound = (row.status === DEVICE_STATUS.ACTIVE && (!!row.encrypted_credential || !!centerMeta.centerCode)) || Boolean(centerMeta.centerCode && centerMeta.centerCode !== "UNCONNECTED");
 
         return {
             installationId,
@@ -90,9 +92,9 @@ class DeviceManager {
             centerId: row.center_id,
             deviceId: row.device_id || "PIP-DESK-ACTIVE",
             centerName: centerMeta.centerName || null,
-            centerCode: centerMeta.centerCode || "CSC-GR-6112",
+            centerCode: centerMeta.centerCode || null,
             walletBalance: centerMeta.walletBalance ?? null,
-            isBound: row.status === DEVICE_STATUS.ACTIVE && !!row.encrypted_credential,
+            isBound: isBound,
             boundAt: row.bound_at,
             lastSeen: row.last_seen
         };
@@ -235,9 +237,7 @@ class DeviceManager {
     getDecryptedCredential() {
         const db = sqliteDb.getDb();
         const row = db.prepare("SELECT status, encrypted_credential FROM device_state WHERE id = 1").get();
-        if (!row || row.status !== DEVICE_STATUS.ACTIVE) return null;
-
-        if (row.encrypted_credential) {
+        if (row && row.status === DEVICE_STATUS.ACTIVE && row.encrypted_credential) {
             const dec = safeStorage.decrypt(row.encrypted_credential);
             if (dec) return dec;
         }
@@ -246,9 +246,9 @@ class DeviceManager {
         try {
             const fs = require("fs");
             const path = require("path");
+            const appDataDir = process.env.APPDATA || process.env.USERPROFILE || "";
             const walletPaths = [
-                path.join(__dirname, "../../../backend/app/processed/license_wallet.json"),
-                path.join(process.env.APPDATA || "", "PrimeIDPro", "processed", "license_wallet.json")
+                path.join(appDataDir, "PrimeIDPro", "license_wallet.json")
             ];
             for (const wp of walletPaths) {
                 if (fs.existsSync(wp)) {
@@ -262,6 +262,65 @@ class DeviceManager {
         } catch (e) {}
 
         return null;
+    }
+
+    async connectWithCredentials({ email, password, deviceName = "Front Counter PC" }) {
+        this.init();
+        if (!email || !password) {
+            throw new Error("Account Email and Password are required");
+        }
+
+        const apiClient = require("../network/apiClient");
+        const installationId = appIdentity.getInstallationId();
+
+        const payload = {
+            installationId,
+            email: email.trim(),
+            password: password.trim(),
+            deviceName: deviceName || "Front Counter PC",
+            appVersion: config.APP_VERSION,
+            osPlatform: process.platform
+        };
+
+        const res = await apiClient.post("/devices/register", payload, { retries: 1 });
+
+        if (!res.success) {
+            throw new Error(res.error || "Failed to authenticate with Central Platform");
+        }
+
+        const data = res.data;
+        const center = data.center || {};
+
+        // Also update license_wallet.json in AppData
+        try {
+            const fs = require("fs");
+            const path = require("path");
+            const appDataDir = process.env.APPDATA || process.env.USERPROFILE || "";
+            const wp = path.join(appDataDir, "PrimeIDPro", "license_wallet.json");
+            let wallet = {};
+            if (fs.existsSync(wp)) {
+                try { wallet = JSON.parse(fs.readFileSync(wp, "utf8")); } catch (e) {}
+            }
+            wallet.isConnected = true;
+            wallet.connectedAccount = email.trim();
+            wallet.licenseKey = password.trim();
+            wallet.deviceToken = data.deviceToken;
+            if (center.centerCode) wallet.centerCode = center.centerCode;
+            if (center.walletBalance !== undefined) wallet.credits = center.walletBalance;
+            fs.mkdirSync(path.dirname(wp), { recursive: true });
+            fs.writeFileSync(wp, JSON.stringify(wallet, null, 2), "utf8");
+        } catch (e) {
+            logger.warn("Failed to persist wallet json during credential connect", { error: e.message });
+        }
+
+        return this.bindDevice({
+            centerId: center.id || center._id || null,
+            deviceId: data.deviceId,
+            credential: data.deviceToken,
+            centerName: center.centerName || email.trim(),
+            centerCode: center.centerCode || null,
+            walletBalance: center.walletBalance
+        });
     }
 }
 

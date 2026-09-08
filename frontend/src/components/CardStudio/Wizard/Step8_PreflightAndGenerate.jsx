@@ -4,7 +4,7 @@ import { validateCardProject, renderCardPreviewHtml, generateCardPdfBlob } from 
 import { useCredits } from '../../../context/CreditContext';
 
 export default function Step8_PreflightAndGenerate({ project, updateProject, onPrev, setToast }) {
-  const { consumeCredits } = useCredits();
+  const { checkCreditsSufficient, consumeCredits } = useCredits();
   const [isValidating, setIsValidating] = useState(false);
 
   const [preflightSummary, setPreflightSummary] = useState(null);
@@ -24,28 +24,23 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
     const runValidation = async () => {
       setIsValidating(true);
       try {
-        const summary = await validateCardProject(project.id);
-        setPreflightSummary(summary);
+        const res = await validateCardProject(project);
+        setPreflightSummary(res.data || res);
       } catch (err) {
         console.error('Validation error:', err);
       } finally {
         setIsValidating(false);
       }
     };
-    if (project.id) runValidation();
-  }, [project.id]);
+    runValidation();
+  }, [project]);
 
   // Load Preview HTML for selected record & side
   useEffect(() => {
     const loadPreview = async () => {
-      if (!project.records?.length) return;
-      const rec = project.records[selectedRecordIndex] || project.records[0];
+      if (!project.id) return;
       try {
-        const html = await renderCardPreviewHtml({
-          projectId: project.id,
-          recordId: rec.id,
-          side: previewSide,
-        });
+        const html = await renderCardPreviewHtml(project.id, selectedRecordIndex, previewSide);
         setPreviewHtml(html);
       } catch (err) {
         console.error('Preview error:', err);
@@ -57,12 +52,11 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
   // Download PDF Handler
   const handleDownloadPdf = async () => {
     const cardCount = records.length || 1;
-    const allowed = await consumeCredits({
+    const hasEnough = checkCreditsSufficient({
       type: 'card',
       count: cardCount,
-      description: `Card Studio 300 DPI PDF (${cardCount} ID Card${cardCount > 1 ? 's' : ''})`,
     });
-    if (!allowed) return;
+    if (!hasEnough) return;
 
     setIsGeneratingPdf(true);
     try {
@@ -82,6 +76,14 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+
+      // Deduct credits AFTER successful download
+      await consumeCredits({
+        type: 'card',
+        count: cardCount,
+        description: `Card Studio 300 DPI PDF (${cardCount} ID Card${cardCount > 1 ? 's' : ''})`,
+      });
+
       setToast?.({ type: 'success', message: `✅ 300 DPI PDF downloaded successfully! (-${cardCount * 5} Credits)` });
     } catch (err) {
       console.error('PDF error:', err);
@@ -95,12 +97,11 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
   const handleNativePrint = async () => {
     if (!previewHtml) return;
     const cardCount = records.length || 1;
-    const allowed = await consumeCredits({
+    const hasEnough = checkCreditsSufficient({
       type: 'card',
       count: cardCount,
-      description: `Card Studio Native Print (${cardCount} ID Card${cardCount > 1 ? 's' : ''})`,
     });
-    if (!allowed) return;
+    if (!hasEnough) return;
 
     try {
       if (window.electronAPI?.printSheet) {
@@ -108,6 +109,14 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
           orientation: 'Portrait',
           paperSize: outputFormat === 'pvc' ? 'CR80' : 'A4',
         });
+
+        // Deduct credits AFTER print
+        await consumeCredits({
+          type: 'card',
+          count: cardCount,
+          description: `Card Studio Native Print (${cardCount} ID Card${cardCount > 1 ? 's' : ''})`,
+        });
+
         if (res?.success) {
           setToast?.({ type: 'success', message: `Sent batch to native Windows printer. (-${cardCount * 5} Credits)` });
         } else {
@@ -119,6 +128,7 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
         iframe.style.position = 'absolute';
         iframe.style.width = '0';
         iframe.style.height = '0';
+        iframe.style.border = 'none';
         document.body.appendChild(iframe);
         iframe.contentWindow.document.open();
         iframe.contentWindow.document.write(previewHtml);

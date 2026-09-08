@@ -18,9 +18,12 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
 
   if (!isOpen) return null;
 
-  const centerCode = deviceState?.centerCode || 'CSC-GR-6112';
+  const isConnected = Boolean(deviceState?.centerCode && deviceState.centerCode !== 'UNCONNECTED');
+  const centerCode = isConnected ? deviceState.centerCode : 'UNCONNECTED';
   const centerName = deviceState?.centerName || 'Digital Photo Studio';
-  const kioskUrl = `https://primeidpro.online/kiosk?center=${encodeURIComponent(centerCode)}`;
+  const kioskUrl = isConnected
+    ? `https://primeidpro.online/kiosk?center=${encodeURIComponent(centerCode)}`
+    : 'https://primeidpro.online/login';
   const qrCodeImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(kioskUrl)}&bgcolor=ffffff&color=0f172a&margin=10`;
 
   const handleCopy = () => {
@@ -113,12 +116,12 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
             <div>
               <h3 className="text-base font-black text-white tracking-wide flex items-center gap-2">
                 Counter Kiosk QR Code
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  LIVE
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${isConnected ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}`}>
+                  {isConnected ? 'LIVE' : 'UNCONNECTED'}
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Center: <span className="text-cyan-400 font-bold">{centerCode}</span> ({centerName})
+                Center: <span className={`font-bold ${isConnected ? 'text-cyan-400' : 'text-amber-400'}`}>{centerCode}</span> ({centerName})
               </p>
             </div>
           </div>

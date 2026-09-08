@@ -1,4 +1,5 @@
 import logging
+from typing import Optional, Any
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 
@@ -6,7 +7,7 @@ logger = logging.getLogger("primeidpro.database")
 
 
 class Database:
-    client: AsyncIOMotorClient = None
+    client: Optional[AsyncIOMotorClient] = None
     db_name: str = settings.mongodb_db_name
 
     async def connect(self):

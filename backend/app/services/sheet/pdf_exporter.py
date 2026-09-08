@@ -2,14 +2,92 @@ import os
 import uuid
 import math
 import logging
-from PIL import Image, ImageDraw
-from fastapi import HTTPException
-from fastapi.responses import FileResponse
-from app.core.config import UPLOAD_DIR, PROCESSED_DIR
-from app.models.sheet import SheetPDFRequest
-from app.utils.color import get_bg_rgb
+import base64
+import io
+import urllib.request
+from typing import Optional
+from PIL import Image, ImageDraw  # pyrefly: ignore [missing-import]
+from fastapi import HTTPException  # pyrefly: ignore [missing-import]
+from fastapi.responses import FileResponse  # pyrefly: ignore [missing-import]
+from app.core.config import UPLOAD_DIR, PROCESSED_DIR, APP_DIR  # pyrefly: ignore [missing-import]
+from app.models.sheet import SheetPDFRequest  # pyrefly: ignore [missing-import]
+from app.utils.color import get_bg_rgb  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger("primeidpro.sheet_pdf")
+
+
+def _load_photo_image(url_str: str) -> Optional[Image.Image]:
+    """
+    Robustly loads a PIL Image from:
+    - Base64 data URLs
+    - HTTP / HTTPS / Localhost URLs
+    - /processed/ or /uploads/ paths
+    - Local filesystem paths or file:// URLs
+    """
+    if not url_str:
+        return None
+
+    url_str = str(url_str).strip()
+
+    # 1. Base64 Data URI
+    if url_str.startswith("data:image"):
+        try:
+            b64_data = url_str.split(",", 1)[1]
+            return Image.open(io.BytesIO(base64.b64decode(b64_data)))
+        except Exception as e:
+            logger.warning(f"Error decoding base64 image: {e}")
+
+    # 2. Local Processed / Uploaded file paths from URL or string
+    try:
+        if "/processed/" in url_str:
+            fname = url_str.split("/processed/")[-1].split("?")[0].lstrip("/\\")
+            if "_final.png" in fname:
+                trans_fname = fname.replace("_final.png", "_transparent.png")
+                for dir_cand in (PROCESSED_DIR, os.path.join(APP_DIR, "processed")):
+                    tp = os.path.join(dir_cand, trans_fname)
+                    if os.path.exists(tp):
+                        try:
+                            return Image.open(tp)
+                        except Exception:
+                            pass
+            cand1 = os.path.join(PROCESSED_DIR, fname)
+            cand2 = os.path.join(APP_DIR, "processed", fname)
+            for c in (cand1, cand2):
+                if os.path.exists(c):
+                    return Image.open(c)
+
+        if "/uploads/" in url_str:
+            fname = url_str.split("/uploads/")[-1].split("?")[0].lstrip("/\\")
+            cand1 = os.path.join(UPLOAD_DIR, fname)
+            cand2 = os.path.join(APP_DIR, "uploads", fname)
+            for c in (cand1, cand2):
+                if os.path.exists(c):
+                    return Image.open(c)
+
+        # 3. Direct local path on disk
+        if os.path.exists(url_str):
+            return Image.open(url_str)
+
+        # 4. file:// URI
+        if url_str.startswith("file://"):
+            clean_p = url_str.replace("file:///", "").replace("file://", "")
+            if os.path.exists(clean_p):
+                return Image.open(clean_p)
+
+        # 5. Remote HTTP/HTTPS fetch
+        if url_str.startswith(("http://", "https://")):
+            req = urllib.request.Request(
+                url_str,
+                headers={"User-Agent": "PrimeIDPro-Exporter/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read()
+                return Image.open(io.BytesIO(data))
+
+    except Exception as img_err:
+        logger.warning(f"Failed to load image from '{url_str[:120]}...': {img_err}")
+
+    return None
 
 
 def generate_sheet_pdf_file(req: SheetPDFRequest) -> FileResponse:
@@ -91,43 +169,26 @@ def generate_sheet_pdf_file(req: SheetPDFRequest) -> FileResponse:
                 x = start_x_px + c * (pw_px + spacing_px)
                 y = start_y_px + r * (ph_px + spacing_px)
 
-                # Load image
-                url_str = item.url
-                photo_img = None
-
-                try:
-                    if url_str.startswith("data:image"):
-                        import base64
-                        from io import BytesIO
-                        b64_data = url_str.split(",", 1)[1]
-                        photo_img = Image.open(BytesIO(base64.b64decode(b64_data)))
-                    elif url_str.startswith("/processed/"):
-                        fname = url_str.split("/processed/")[1]
-                        local_path = os.path.join(PROCESSED_DIR, fname)
-                        if os.path.exists(local_path):
-                            photo_img = Image.open(local_path)
-                    elif url_str.startswith("/uploads/"):
-                        fname = url_str.split("/uploads/")[1]
-                        local_path = os.path.join(UPLOAD_DIR, fname)
-                        if os.path.exists(local_path):
-                            photo_img = Image.open(local_path)
-                    elif os.path.exists(url_str):
-                        photo_img = Image.open(url_str)
-                except Exception as img_err:
-                    logger.warning(f"Failed to load image {url_str}: {img_err}")
+                # Robust image loader
+                photo_img = _load_photo_image(item.url)
 
                 if photo_img:
-                    if photo_img.mode == "RGBA":
-                        bg_c = get_bg_rgb(item.bgColor or "#FFFFFF")
-                        flat_card = Image.new("RGB", (pw_px, ph_px), bg_c)
-                        resized_p = photo_img.resize((pw_px, ph_px), Image.Resampling.LANCZOS)
-                        flat_card.paste(resized_p, (0, 0), mask=resized_p.split()[3])
-                        page_canvas.paste(flat_card, (x, y))
-                    else:
-                        resized_p = photo_img.resize((pw_px, ph_px), Image.Resampling.LANCZOS)
-                        page_canvas.paste(resized_p, (x, y))
+                    try:
+                        if photo_img.mode == "RGBA":
+                            bg_c = get_bg_rgb(item.bgColor or "#FFFFFF")
+                            flat_card = Image.new("RGB", (pw_px, ph_px), bg_c)
+                            resized_p = photo_img.resize((pw_px, ph_px), Image.Resampling.LANCZOS)
+                            flat_card.paste(resized_p, (0, 0), mask=resized_p.split()[3])
+                            page_canvas.paste(flat_card, (x, y))
+                        else:
+                            rgb_img = photo_img.convert("RGB")
+                            resized_p = rgb_img.resize((pw_px, ph_px), Image.Resampling.LANCZOS)
+                            page_canvas.paste(resized_p, (x, y))
+                    except Exception as paste_err:
+                        logger.warning(f"Failed pasting photo at slot {slot}: {paste_err}")
+                        draw.rectangle([x, y, x + pw_px, y + ph_px], fill=(245, 245, 245))
                 else:
-                    # Placeholder outline
+                    # Placeholder outline if image completely unavailable
                     draw.rectangle([x, y, x + pw_px, y + ph_px], fill=(245, 245, 245))
 
                 # Draw subtle photo border

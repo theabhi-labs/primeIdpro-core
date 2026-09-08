@@ -13,7 +13,14 @@ from app.core.config import APP_DIR
 
 logger = logging.getLogger("primeidpro.credits")
 
-WALLET_FILE = os.path.join(APP_DIR, "processed", "license_wallet.json")
+def get_user_wallet_file_path() -> str:
+    """Returns persistent, user-specific wallet file path in OS AppData directory (never bundled with app builds)."""
+    appdata = os.environ.get("APPDATA") or os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    lock_dir = os.path.join(appdata, "PrimeIDPro")
+    os.makedirs(lock_dir, exist_ok=True)
+    return os.path.join(lock_dir, "license_wallet.json")
+
+
 DEFAULT_FREE_CREDITS = 20
 PASSPORT_COST = 2
 CARD_COST_PER_UNIT = 5
@@ -47,7 +54,7 @@ def get_machine_hardware_id() -> str:
 
 def get_machine_lock_file() -> str:
     """Path to persistent machine lock file in AppData."""
-    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+    appdata = os.environ.get("APPDATA") or os.environ.get("USERPROFILE") or os.path.expanduser("~")
     lock_dir = os.path.join(appdata, "PrimeIDPro")
     os.makedirs(lock_dir, exist_ok=True)
     return os.path.join(lock_dir, ".sys_machine.lock")
@@ -91,9 +98,10 @@ def mark_machine_welcome_claimed(machine_id: str):
 
 def _load_wallet() -> Dict[str, Any]:
     machine_id = get_machine_hardware_id()
-    if os.path.exists(WALLET_FILE):
+    wallet_path = get_user_wallet_file_path()
+    if os.path.exists(wallet_path):
         try:
-            with open(WALLET_FILE, "r", encoding="utf-8") as f:
+            with open(wallet_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
                     data["machineId"] = machine_id
@@ -118,13 +126,17 @@ def _load_wallet() -> Dict[str, Any]:
 
 
 def _save_wallet(wallet: Dict[str, Any]):
-    os.makedirs(os.path.dirname(WALLET_FILE), exist_ok=True)
-    with open(WALLET_FILE, "w", encoding="utf-8") as f:
+    wallet_path = get_user_wallet_file_path()
+    os.makedirs(os.path.dirname(wallet_path), exist_ok=True)
+    with open(wallet_path, "w", encoding="utf-8") as f:
         json.dump(wallet, f, indent=2)
 
 
 def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
-    """Syncs live token balance directly from primeidpro.online cloud database."""
+    """
+    Syncs live token balance with primeidpro.online cloud server.
+    Preserves local debits while detecting online top-ups and recharges.
+    """
     global _last_remote_sync_time
     now = time.time()
     if not force and (now - _last_remote_sync_time) < 4:
@@ -154,11 +166,46 @@ def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
                 data = parsed.get("data", {})
                 cloud_bal = data.get("walletBalance")
                 if cloud_bal is not None:
-                    wallet["credits"] = int(cloud_bal)
+                    cloud_bal = int(cloud_bal)
+                    prev_baseline = wallet.get("cloudBalanceBaseline")
+                    unsettled = wallet.get("unsettled_debit_tokens", 0)
+
+                    if prev_baseline is None:
+                        # Initial sync baseline setup
+                        wallet["cloudBalanceBaseline"] = cloud_bal
+                        wallet["credits"] = max(0, cloud_bal - unsettled)
+                    elif cloud_bal > prev_baseline:
+                        # Online top-up / recharge detected on web portal
+                        recharge_delta = cloud_bal - prev_baseline
+                        wallet["cloudBalanceBaseline"] = cloud_bal
+                        wallet["credits"] = max(0, wallet.get("credits", 0) + recharge_delta)
+                        tx = {
+                            "id": f"tx_{int(time.time())}_recharge",
+                            "timestamp": int(time.time()),
+                            "type": "CREDIT",
+                            "description": f"Online Top-up (+{recharge_delta} tokens)",
+                            "amount": recharge_delta,
+                            "balanceAfter": wallet["credits"],
+                        }
+                        wallet.setdefault("transactions", []).append(tx)
+                        logger.info(f"🎉 Online recharge detected: +{recharge_delta} tokens for {account_id}")
+                    else:
+                        # Normal sync - maintain local decremented balance
+                        wallet["credits"] = max(0, wallet["cloudBalanceBaseline"] - unsettled)
+
                     if data.get("centerCode"):
                         wallet["centerCode"] = data.get("centerCode")
+                    
                     _save_wallet(wallet)
-                    logger.info(f"🔄 Live synced with PrimeIDPro.online: {cloud_bal} tokens for {account_id}")
+                    if data.get("centerId") and wallet.get("centerCode"):
+                        _sync_sqlite_device_state(
+                            center_id=data.get("centerId"),
+                            device_id="PIP-DESK-ACTIVE",
+                            center_name=account_id.strip(),
+                            center_code=wallet.get("centerCode"),
+                            wallet_balance=wallet["credits"]
+                        )
+                    logger.debug(f"🔄 Synced wallet balance: {wallet['credits']} tokens (Cloud: {cloud_bal}, Unsettled: {unsettled})")
     except Exception as e:
         logger.debug(f"Live balance sync check: {e}")
 
@@ -187,6 +234,38 @@ def get_wallet_status() -> Dict[str, Any]:
         },
         "transactions": wallet.get("transactions", [])[-15:],
     }
+
+
+def _sync_sqlite_device_state(center_id: str, device_id: str, center_name: str, center_code: str, wallet_balance: int):
+    try:
+        import sqlite3
+        import datetime
+        appdata = os.environ.get("USERPROFILE") or os.environ.get("APPDATA") or os.path.expanduser("~")
+        sqlite_path = os.path.join(appdata, ".primeidpro", "data", "primeidpro.sqlite")
+        if os.path.exists(sqlite_path) and center_id and center_code:
+            conn = sqlite3.connect(sqlite_path)
+            cur = conn.cursor()
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cur.execute("""
+                UPDATE device_state SET
+                    center_id = ?,
+                    device_id = ?,
+                    status = 'ACTIVE',
+                    bound_at = ?,
+                    last_seen = ?,
+                    updated_at = ?
+                WHERE id = 1
+            """, (center_id, device_id or "PIP-DESK-ACTIVE", now, now, now))
+            meta = json.dumps({"centerName": center_name, "centerCode": center_code, "walletBalance": wallet_balance})
+            cur.execute("""
+                INSERT OR REPLACE INTO app_state (key, value, updated_at)
+                VALUES ('center_metadata', ?, ?)
+            """, (meta, now))
+            conn.commit()
+            conn.close()
+            logger.info("Synced device state to local SQLite database")
+    except Exception as e:
+        logger.warning(f"Could not update SQLite device state: {e}")
 
 
 def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
@@ -248,15 +327,32 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
         wallet["centerCode"] = center.get("centerCode")
         remote_balance = center.get("walletBalance")
         if remote_balance is not None and int(remote_balance) > 0:
-            wallet["credits"] = int(remote_balance)
+            bal = int(remote_balance)
+            wallet["credits"] = bal
+            wallet["cloudBalanceBaseline"] = bal
+            wallet["unsettled_debit_tokens"] = 0
         else:
             # Welcome starter credits
             if wallet.get("credits", 0) == 0:
                 wallet["credits"] = DEFAULT_FREE_CREDITS
+                wallet["cloudBalanceBaseline"] = DEFAULT_FREE_CREDITS
+                wallet["unsettled_debit_tokens"] = 0
+
+        # Sync to SQLite if center details are present
+        if (center.get("id") or center.get("_id")) and center.get("centerCode"):
+            _sync_sqlite_device_state(
+                center_id=center.get("id") or center.get("_id"),
+                device_id=remote_data.get("deviceId") or "PIP-DESK-ACTIVE",
+                center_name=center.get("centerName") or account_id.strip(),
+                center_code=center.get("centerCode"),
+                wallet_balance=wallet["credits"]
+            )
     else:
         # Fallback if offline
         if wallet.get("credits", 0) == 0:
             wallet["credits"] = DEFAULT_FREE_CREDITS
+            wallet["cloudBalanceBaseline"] = DEFAULT_FREE_CREDITS
+            wallet["unsettled_debit_tokens"] = 0
 
     # Anti-abuse registration log
     mark_machine_welcome_claimed(machine_id)
@@ -278,7 +374,7 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
 def deduct_credits(action_type: str, count: int = 1, description: Optional[str] = None) -> Dict[str, Any]:
     """
     Deducts tokens based on action:
-      - 'passport': 2 tokens per sheet / print
+      - 'passport': 2 tokens per sheet / print order
       - 'card': 5 tokens per ID card
     """
     wallet = _load_wallet()
@@ -293,8 +389,6 @@ def deduct_credits(action_type: str, count: int = 1, description: Optional[str] 
             },
         )
 
-    # Sync latest balance first
-    sync_cloud_wallet_balance(wallet, force=True)
     current_balance = wallet.get("credits", 0)
 
     if action_type == "passport":
@@ -321,6 +415,8 @@ def deduct_credits(action_type: str, count: int = 1, description: Optional[str] 
 
     new_balance = current_balance - cost
     wallet["credits"] = new_balance
+    wallet["unsettled_debit_tokens"] = wallet.get("unsettled_debit_tokens", 0) + cost
+    wallet["totalSpentTokens"] = wallet.get("totalSpentTokens", 0) + cost
 
     tx = {
         "id": f"tx_{int(time.time())}_{action_type}",
@@ -332,6 +428,16 @@ def deduct_credits(action_type: str, count: int = 1, description: Optional[str] 
     }
     wallet.setdefault("transactions", []).append(tx)
     _save_wallet(wallet)
+
+    account_id = wallet.get("connectedAccount", "Unknown")
+    if wallet.get("centerCode"):
+        _sync_sqlite_device_state(
+            center_id="PIP-CENTER-ID",
+            device_id="PIP-DESK-ACTIVE",
+            center_name=account_id.strip() if isinstance(account_id, str) else "Account",
+            center_code=wallet.get("centerCode"),
+            wallet_balance=new_balance
+        )
 
     logger.info(f"[TOKEN DEBIT] Deducted {cost} tokens for {action_type}. Remaining: {new_balance}")
     return {

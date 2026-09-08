@@ -28,6 +28,7 @@ export default function ConnectOnlineModal() {
     licenseKey,
     connectAccount,
     disconnectAccount,
+    centerCode,
     rates,
     refreshCredits,
   } = useCredits();
@@ -239,11 +240,18 @@ export default function ConnectOnlineModal() {
                   <span className="text-sm font-bold text-slate-400 uppercase">Tokens Available</span>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-400">
-                  <div>
-                    Connected Account: <strong className="text-white">{connectedAccount}</strong>
+                <div className="pt-2 border-t border-slate-800 space-y-1.5 text-xs text-slate-400">
+                  <div className="flex justify-between items-center">
+                    <span>Connected Account:</span>
+                    <strong className="text-white font-mono">{connectedAccount}</strong>
                   </div>
-                  <div className="flex gap-3 text-[11px]">
+                  {centerCode && (
+                    <div className="flex justify-between items-center">
+                      <span>Center Kiosk Code:</span>
+                      <strong className="text-cyan-400 font-mono font-bold">{centerCode}</strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-[11px] pt-1">
                     <span>📸 Photo: <strong className="text-white">{rates.passportPhotoPrint} Tokens</strong></span>
                     <span>🪪 Card: <strong className="text-white">{rates.idCardPrintPerUnit} Tokens</strong></span>
                   </div>
@@ -254,7 +262,7 @@ export default function ConnectOnlineModal() {
               <button
                 type="button"
                 onClick={() => openWebsite('https://primeidpro.online/billing')}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <CreditCard size={16} />
                 <span>Buy Tokens / Recharge on Website</span>
@@ -267,7 +275,7 @@ export default function ConnectOnlineModal() {
                   type="button"
                   onClick={handleDisconnect}
                   disabled={isSubmitting}
-                  className="text-red-400 hover:text-red-300 font-semibold flex items-center gap-1.5 transition-colors"
+                  className="text-red-400 hover:text-red-300 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <LogOut size={14} /> Disconnect Account
                 </button>
@@ -275,7 +283,7 @@ export default function ConnectOnlineModal() {
                 <button
                   type="button"
                   onClick={closeConnectModal}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition-colors"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition-colors cursor-pointer"
                 >
                   Close
                 </button>

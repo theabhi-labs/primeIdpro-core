@@ -256,6 +256,23 @@ function registerIpcHandlers() {
         }
     });
 
+    ipcMain.handle("device:connectCredentials", async (event, payload = {}) => {
+        try {
+            const device = await deviceManager.connectWithCredentials({
+                email: payload.email,
+                password: payload.password,
+                deviceName: payload.deviceName || "Front Counter PC"
+            });
+            // Immediately poll online jobs
+            jobPoller.poll();
+            return { success: true, device };
+        } catch (err) {
+            const errorMsg = err.response?.data?.message || err.message || (typeof err === "string" ? err : "Connection failed");
+            logger.error("IPC_DEVICE_CREDENTIAL_CONNECT_ERROR", { error: errorMsg });
+            return { success: false, error: errorMsg };
+        }
+    });
+
     ipcMain.handle("device:unpair", () => {
         try {
             const device = deviceManager.unpair();
