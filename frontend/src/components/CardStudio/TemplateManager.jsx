@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { LayoutTemplate, Eye, Layers, QrCode, Tag, CheckCircle2, RefreshCw, Maximize2 } from 'lucide-react';
+import { LayoutTemplate, Eye, Layers, QrCode, Tag, CheckCircle2, RefreshCw, Maximize2, Upload } from 'lucide-react';
 import CardVisualPreview from './CardVisualPreview';
 import CardDetailModal from './CardDetailModal';
+import { uploadCustomTemplateApi } from '../../services/cardApi';
 
-export default function TemplateManager({ templates = [], onSelectTemplate }) {
+export default function TemplateManager({ templates = [], onSelectTemplate, onTemplateCreated, setToast }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [templateSides, setTemplateSides] = useState({});
   const [modalTemplate, setModalTemplate] = useState(null);
@@ -14,6 +15,28 @@ export default function TemplateManager({ templates = [], onSelectTemplate }) {
     if (activeCategory === 'all') return true;
     return t.category === activeCategory;
   });
+
+  const handleCustomTemplateUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const templateName = `Custom Template ${Math.floor(Math.random() * 1000)}`;
+      formData.append('templateName', templateName);
+      formData.append('orientation', 'vertical');
+
+      const res = await uploadCustomTemplateApi(formData);
+      if (res?.success) {
+        setToast?.({ type: 'success', message: 'Template created successfully!' });
+        onTemplateCreated?.();
+      }
+    } catch (err) {
+      console.error('Failed to create template:', err);
+      setToast?.({ type: 'error', message: 'Failed to create template.' });
+    }
+  };
 
   const handleToggleSide = (e, tmplId) => {
     e.stopPropagation();
@@ -77,6 +100,7 @@ export default function TemplateManager({ templates = [], onSelectTemplate }) {
                       side={side}
                       scale={1.0}
                       isInteractive={false}
+                      isVertical={tmpl.size?.orientation === 'vertical' || tmpl.id === 'corporate-id-dark' || tmpl.id === 'mhrsa-inter-college-vertical' || tmpl.id === 'prime-crimson-navy' || tmpl.id === 'prime-navy-amber'}
                     />
                   </div>
 

@@ -118,24 +118,26 @@ def clean_anatomical_portrait_mask(rgba_img: Image.Image) -> Image.Image:
         return rgba_img
 
 
-def remove_background_lightweight(input_path: str, output_path: str) -> bool:
+def remove_background_lightweight(input_path: str, output_path: str, allow_cloud: bool = True) -> bool:
     """
     Primary Background Removal Engine:
-    1. Attempts RMBG-2.0 Cloud AI (Sub-pixel hair matting, zero clutter, 4K crispness) if configured.
-    2. Gracefully falls back to local isnet-general-use / u2net_human_seg with soft-alpha continuous matting for 100% offline support.
+    1. If allow_cloud=True (Passport Studio): Attempts RMBG-2.0 Cloud AI for sub-pixel hair matting.
+    2. If allow_cloud=False (Card Studio bulk cards): Strictly runs 100% locally at ₹0 cost.
     """
-    # 1. Try RMBG-2.0 Cloud AI (Ultra-Sharp Portrait Matting)
-    try:
-        from app.services.background.cloud_remover import remove_background_rmbg2_sync
-        if remove_background_rmbg2_sync(input_path, output_path):
-            # Validate output exists and has valid alpha
-            if os.path.exists(output_path):
-                check = Image.open(output_path)
-                if check.mode == "RGBA":
-                    logger.info("✅ Background successfully removed via RMBG-2.0 Cloud AI")
-                    return True
-    except Exception as cloud_err:
-        logger.debug(f"RMBG-2.0 Cloud AI skipped or failed: {cloud_err}")
+    # 1. Try RMBG-2.0 Cloud AI (Ultra-Sharp Portrait Matting) - Only for Passport Studio
+    if allow_cloud:
+        try:
+            from app.services.background.cloud_remover import remove_background_rmbg2_sync
+            if remove_background_rmbg2_sync(input_path, output_path):
+                # Validate output exists and has valid alpha
+                if os.path.exists(output_path):
+                    check = Image.open(output_path)
+                    if check.mode == "RGBA":
+                        logger.info("✅ Background successfully removed via RMBG-2.0 Cloud AI")
+                        return True
+        except Exception as cloud_err:
+            logger.debug(f"RMBG-2.0 Cloud AI skipped or failed: {cloud_err}")
+
 
     # 2. Local Offline Neural Segmentation (isnet-general-use / u2net_human_seg / u2netp)
     rembg_success = False

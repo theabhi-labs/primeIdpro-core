@@ -1,0 +1,385 @@
+<style> body { margin: 0; padding: 0; overflow: hidden; }
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+  .card-container {
+    width: 100vw;
+    height: 100vh;
+    background-color: #ffffff;
+    font-family: 'Montserrat', sans-serif;
+    position: relative;
+    overflow: hidden;
+    color: #1a2332;
+    box-sizing: border-box;
+  }
+
+  /* FRONT SIDE */
+  .front-header {
+    margin-top: 6vh;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  .front-logo {
+    width: 20vw;
+    height: 20vw;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .front-school-name {
+    font-size: 4.5vw;
+    font-weight: 800;
+    color: #1a2332;
+    margin-top: 1.5vh;
+    text-transform: uppercase;
+    letter-spacing: 0.5vw;
+  }
+  .front-school-slogan {
+    font-size: 2vw;
+    color: #f59e0b;
+    text-transform: uppercase;
+    letter-spacing: 0.3vw;
+    margin-top: 0.5vh;
+    font-weight: 600;
+  }
+
+  .front-amber-bg {
+    position: absolute;
+    top: 36vh;
+    left: 0;
+    width: 100vw;
+    height: 64vh;
+    background: linear-gradient(to right, #d97706, #f59e0b, #d97706);
+    clip-path: polygon(0 0, 50% 8vh, 100% 0, 100% 100%, 0 100%);
+    z-index: 1;
+  }
+
+  .front-navy-bg {
+    position: absolute;
+    top: 38vh;
+    left: 0;
+    width: 100vw;
+    height: 62vh;
+    background: #1a2332;
+    clip-path: polygon(0 0, 50% 8vh, 100% 0, 100% 100%, 50% 96%, 0 100%);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .front-photo-wrapper {
+    position: absolute;
+    top: 32vh;
+    left: 30vw;
+    width: 40vw;
+    height: 40vw;
+    border-radius: 3vw;
+    border: 1vw solid #e2e8f0;
+    overflow: hidden;
+    background-color: #f8fafc;
+    z-index: 10;
+    box-shadow: 0 2vw 4vw rgba(0,0,0,0.1);
+  }
+  .front-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .front-student-info {
+    text-align: center;
+    margin-top: 18vh;
+    position: relative;
+    z-index: 10;
+  }
+  .front-student-name {
+    font-size: 6vw;
+    font-weight: 800;
+    color: #ffffff;
+  }
+  .front-student-title {
+    font-size: 3vw;
+    color: #94a3b8;
+    margin-top: 0.5vh;
+    font-weight: 500;
+  }
+
+  .front-details-grid {
+    margin-top: 4vh;
+    display: grid;
+    grid-template-columns: 24vw 1fr;
+    gap: 1.2vh 2vw;
+    color: #ffffff;
+    font-size: 3.2vw;
+    width: 80vw;
+  }
+  .detail-label {
+    font-weight: 400;
+    color: #94a3b8;
+  }
+  .detail-value {
+    font-weight: 600;
+    color: #ffffff;
+  }
+  .detail-value::before {
+    content: ': ';
+    margin-right: 1vw;
+    font-weight: 400;
+    color: #94a3b8;
+  }
+
+
+  /* BACK SIDE */
+  .back-amber-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 65vh;
+    background: linear-gradient(to right, #d97706, #f59e0b, #d97706);
+    clip-path: polygon(0 0, 100% 0, 100% 88%, 50% 100%, 0 88%);
+    z-index: 1;
+  }
+  .back-navy-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 63vh;
+    background: #1a2332;
+    clip-path: polygon(0 0, 100% 0, 100% 88%, 50% 100%, 0 88%);
+    z-index: 2;
+    padding: 6vh 8vw;
+    box-sizing: border-box;
+  }
+
+  .back-terms-title {
+    color: #f59e0b;
+    font-size: 4vw;
+    font-weight: 800;
+    margin-bottom: 2vh;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .back-terms-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .back-terms-list li {
+    color: #e2e8f0;
+    font-size: 2.8vw;
+    margin-bottom: 1.2vh;
+    padding-left: 2.5vw;
+    position: relative;
+    line-height: 1.3;
+  }
+  .back-terms-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 1vh;
+    width: 1vw;
+    height: 1vw;
+    background-color: #f59e0b;
+    border-radius: 50%;
+  }
+
+  .back-contact-section {
+    margin-top: 4vh;
+    display: flex;
+    flex-direction: column;
+    gap: 2vh;
+  }
+  .contact-item {
+    display: flex;
+    align-items: center;
+  }
+  .contact-icon {
+    width: 5.5vw;
+    height: 5.5vw;
+    background-color: #f59e0b;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3vw;
+    color: #1a2332;
+    font-size: 2.8vw;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .contact-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .contact-label {
+    font-size: 2vw;
+    color: #94a3b8;
+  }
+  .contact-val {
+    font-size: 3vw;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .back-bottom-content {
+    position: absolute;
+    bottom: 5vh;
+    left: 0;
+    width: 100vw;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .back-signature-section {
+    text-align: center;
+    margin-bottom: 3vh;
+  }
+  .signature-img {
+    height: 8vh;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .signature-line {
+    width: 40vw;
+    height: 1px;
+    background-color: #cbd5e1;
+    margin: 0.5vh auto;
+  }
+  .signature-label {
+    font-size: 2.5vw;
+    color: #1a2332;
+    font-weight: 600;
+  }
+
+  .back-logo {
+    height: 7vh;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .back-school-name {
+    font-size: 3.5vw;
+    font-weight: 800;
+    color: #1a2332;
+    text-transform: uppercase;
+    margin-top: 1vh;
+  }
+
+</style>
+
+{% if side == 'front' %}
+<div class="card-container">
+  
+  <div class="front-header">
+    {% if organization.showLogo and organization.logo %}
+      <img src="{{ organization.logo }}" class="front-logo" />
+    {% endif %}
+    <div class="front-school-name">{{ organization.name }}</div>
+    <div class="front-school-slogan">{{ organization.subtitle | default('SLOGAN HERE') }}</div>
+  </div>
+
+  <div class="front-amber-bg"></div>
+  <div class="front-navy-bg">
+    <div class="front-student-info">
+      <div class="front-student-name">{{ name }}</div>
+      <div class="front-student-title">Student</div>
+    </div>
+
+    <div class="front-details-grid">
+      <div class="detail-label">ID No</div>
+      <div class="detail-value">{{ idNo }}</div>
+
+      {% if className %}
+      <div class="detail-label">Class</div>
+      <div class="detail-value">{{ className }}</div>
+      {% endif %}
+
+      {% if dob %}
+      <div class="detail-label">Date of Birth</div>
+      <div class="detail-value">{{ dob }}</div>
+      {% endif %}
+
+      {% if bloodGroup %}
+      <div class="detail-label">Blood Group</div>
+      <div class="detail-value">{{ bloodGroup }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="front-photo-wrapper">
+    {% if photo %}
+      <img src="{{ photo }}" class="front-photo" />
+    {% else %}
+      <div style="width: 100%; height: 100%; background: #e2e8f0; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 3vw; font-weight: 600; text-align: center; padding: 2vw;">Photo Here</div>
+    {% endif %}
+  </div>
+
+</div>
+{% else %}
+<div class="card-container">
+  
+  <div class="back-amber-bg"></div>
+  <div class="back-navy-bg">
+    <div class="back-terms-title">{{ organization.backTermsTitle | default('TERMS AND CONDITIONS') }}</div>
+    <ul class="back-terms-list">
+      {% for term in organization.terms %}
+        <li>{{ term }}</li>
+      {% endfor %}
+    </ul>
+
+    <div class="back-contact-section">
+      {% if organization.phone %}
+      <div class="contact-item">
+        <div class="contact-icon">✆</div>
+        <div class="contact-text">
+          <span class="contact-label">Your Phone Number</span>
+          <span class="contact-val">{{ organization.phone }}</span>
+        </div>
+      </div>
+      {% endif %}
+      
+      <div class="contact-item">
+        <div class="contact-icon">✉</div>
+        <div class="contact-text">
+          <span class="contact-label">Your Email Address</span>
+          <span class="contact-val">mail@example.com</span>
+        </div>
+      </div>
+
+      {% if organization.address %}
+      <div class="contact-item">
+        <div class="contact-icon">📍</div>
+        <div class="contact-text">
+          <span class="contact-label">Your City Address</span>
+          <span class="contact-val">{{ organization.address }}</span>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="back-bottom-content">
+    <div class="back-signature-section">
+      {% if organization.showSignature and organization.signature %}
+        <img src="{{ organization.signature }}" class="signature-img" />
+      {% else %}
+        <div style="height: 6vh"></div>
+      {% endif %}
+      <div class="signature-line"></div>
+      <div class="signature-label">{{ organization.signatureLabel | default('Principal Signature') }}</div>
+    </div>
+
+    {% if organization.showLogo and organization.logo %}
+      <img src="{{ organization.logo }}" class="back-logo" />
+    {% endif %}
+    <div class="back-school-name">{{ organization.name }}</div>
+  </div>
+
+</div>
+{% endif %}

@@ -178,21 +178,21 @@ def align_and_crop_face(
     face_width = abs(p_right_cheek[0] - p_left_cheek[0])
 
     # Accurate crown estimation including full hair volume
-    crown_y = p_forehead[1] - 0.45 * face_height
+    crown_y = p_forehead[1] - 0.50 * face_height
 
     # Check alpha channel for true hair top boundary if available
     if len(img_np.shape) == 3 and img_np.shape[2] == 4:
         try:
             alpha = img_np[:, :, 3]
-            x_min = int(max(0, eye_mid[0] - face_width * 0.5))
-            x_max = int(min(w, eye_mid[0] + face_width * 0.5))
+            x_min = int(max(0, eye_mid[0] - face_width * 0.75))
+            x_max = int(min(w, eye_mid[0] + face_width * 0.75))
             if x_max > x_min:
                 cols_alpha = alpha[:, x_min:x_max]
-                ys_above = np.where(cols_alpha > 50)[0]
+                ys_above = np.where(cols_alpha > 25)[0]
                 if len(ys_above) > 0:
                     real_hair_top = np.min(ys_above)
-                    min_allowed = p_forehead[1] - 0.65 * face_height
-                    max_allowed = p_forehead[1] - 0.25 * face_height
+                    min_allowed = p_forehead[1] - 1.25 * face_height
+                    max_allowed = p_forehead[1] - 0.15 * face_height
                     if min_allowed <= real_hair_top <= max_allowed:
                         crown_y = float(real_hair_top)
         except Exception:

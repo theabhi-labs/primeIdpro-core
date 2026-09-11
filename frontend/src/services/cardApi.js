@@ -13,11 +13,12 @@ const getClient = () => {
   });
 };
 
-// Templates
+// ---------------- TEMPLATES ----------------
 export const getCardTemplates = async () => {
   const res = await getClient().get('/templates');
   return res.data;
 };
+export const getCardTemplatesApi = getCardTemplates;
 
 export const getTemplateSamplePreview = async (templateId, side = 'front') => {
   const res = await getClient().get(`/templates/${templateId}/preview?side=${side}`, {
@@ -26,41 +27,14 @@ export const getTemplateSamplePreview = async (templateId, side = 'front') => {
   return res.data;
 };
 
-export const renderCardPreviewHtml = async (templateId, record, side = 'front') => {
-  const res = await getClient().post(`/templates/${templateId}/render-preview?side=${side}`, record, {
-    responseType: 'text',
-  });
-  return res.data;
-};
-
-export const getTemplatePreviewWithData = renderCardPreviewHtml;
-
-// Data import & matching
-export const importCardFile = async (formData) => {
-  const res = await getClient().post('/parse-file', formData, {
+export const uploadCustomTemplateApi = async (formData) => {
+  const res = await getClient().post('/templates/custom-upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return res.data;
 };
-export const parseDataFileApi = importCardFile;
 
-export const matchCardPhotos = async (formData) => {
-  const res = await getClient().post('/match-photos', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 300000,
-  });
-  return res.data;
-};
-export const matchPhotosApi = matchCardPhotos;
-
-export const processCardPhotoQueue = async (payload) => {
-  const res = await getClient().post('/process-photos', payload, {
-    timeout: 600000,
-  });
-  return res.data;
-};
-
-// Projects CRUD
+// ---------------- PROJECTS CRUD ----------------
 export const listCardProjects = async () => {
   const res = await getClient().get('/projects');
   return res.data;
@@ -74,38 +48,96 @@ export const getCardProject = async (projectId) => {
 export const getCardProjectApi = getCardProject;
 
 export const saveCardProject = async (projectData) => {
-  const res = await getClient().post('/projects', projectData);
+  const res = await getClient().post('/projects/save', projectData);
   return res.data;
 };
+export const saveCardProjectApi = saveCardProject;
 export const createCardProjectApi = saveCardProject;
 
 export const deleteCardProject = async (projectId) => {
   const res = await getClient().delete(`/projects/${projectId}`);
   return res.data;
 };
+export const deleteCardProjectApi = deleteCardProject;
 
-export const updateCardRecordApi = async (projectId, recordId, updatedData) => {
-  const res = await getClient().put(`/projects/${projectId}/records/${recordId}`, updatedData);
+// ---------------- BATCHES & SESSIONS ----------------
+export const lockBatchApi = async (projectId, batchId) => {
+  const res = await getClient().post(`/projects/${projectId}/batches/${batchId}/lock`);
   return res.data;
 };
 
-export const deleteCardRecordApi = async (projectId, recordId) => {
-  const res = await getClient().delete(`/projects/${projectId}/records/${recordId}`);
+export const createNewBatchApi = async (projectId, name = null) => {
+  const res = await getClient().post(`/projects/${projectId}/batches/new`, null, {
+    params: { name },
+  });
   return res.data;
 };
 
-export const validateCardProject = async (project) => {
-  const errors = [];
-  if (!project.records || project.records.length === 0) {
-    errors.push('No student/employee data records imported.');
+export const importCardFile = async (formDataOrFile, sheetName = null) => {
+  let fd;
+  if (formDataOrFile instanceof FormData) {
+    fd = formDataOrFile;
+  } else {
+    fd = new FormData();
+    fd.append('file', formDataOrFile);
+    if (sheetName) fd.append('sheetName', sheetName);
   }
-  if (!project.templateId) {
-    errors.push('No card template selected.');
-  }
-  return { valid: errors.length === 0, errors };
+  const res = await getClient().post('/import-file', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+export const parseDataFileApi = importCardFile;
+
+export const matchCardPhotos = async (payload) => {
+  const res = await getClient().post('/match-photos', payload, {
+    timeout: 300000,
+  });
+  return res.data;
+};
+export const matchPhotosApi = matchCardPhotos;
+
+export const processCardPhotoQueue = async (payload) => {
+  const res = await getClient().post('/process-queue', payload, {
+    timeout: 600000,
+  });
+  return res.data;
 };
 
-// PDF Generation
+export const processSinglePhotoApi = async ({ projectId, photoDataUrl, recordName, bgColor, forceReprocess }) => {
+  const res = await getClient().post('/process-single-photo', {
+    projectId,
+    photoDataUrl,
+    recordName,
+    bgColor,
+    forceReprocess: Boolean(forceReprocess),
+  }, {
+    timeout: 60000,
+  });
+  return res.data;
+};
+
+// ---------------- RENDER PREVIEW ----------------
+export const renderPreviewApi = async ({ projectId, recordId, side = 'front' }) => {
+  const res = await getClient().post(
+    '/render-preview',
+    { projectId, recordId, side },
+    { responseType: 'text' }
+  );
+  return res.data;
+};
+export const getTemplatePreviewWithData = renderPreviewApi;
+
+export const renderLiveSampleApi = async ({ templateId, side = 'front', org = null }) => {
+  const res = await getClient().post(
+    `/render-live-sample?templateId=${templateId}&side=${side}`,
+    org || {},
+    { responseType: 'text' }
+  );
+  return res.data;
+};
+
+// ---------------- PDF GENERATION ----------------
 export const generateCardPdfBlob = async (payload) => {
   const res = await getClient().post('/generate-pdf', payload, {
     responseType: 'blob',

@@ -229,11 +229,11 @@ const ProcessedPhotosGrid = ({
                     </button>
                     <button
                       onClick={() => onEdit(photo)}
-                      className="p-2.5 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-xl hover:bg-cyan-500 hover:text-slate-950 hover:border-cyan-400 transition-all text-slate-200 flex items-center gap-1 text-xs font-bold cursor-pointer"
-                      title="4K AI Restore & Fine Tune"
+                      className="p-2.5 bg-slate-900/90 backdrop-blur-xl border border-slate-700 rounded-xl hover:bg-cyan-500 hover:text-slate-950 hover:border-cyan-400 transition-all text-slate-200 flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                      title="Edit Photo"
                     >
-                      <Sparkles size={15} className="text-amber-400" />
-                      <span>4K Edit</span>
+                      <Edit2 size={15} className="text-cyan-400" />
+                      <span>Edit</span>
                     </button>
                     <button
                       onClick={() => onDelete(photo.id)}

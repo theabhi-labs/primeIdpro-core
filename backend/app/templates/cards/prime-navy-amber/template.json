@@ -1,0 +1,21 @@
+{
+  "id": "prime-navy-amber",
+  "name": "Prime Navy Amber",
+  "category": "school",
+  "version": "1.0.0",
+  "scalable": true,
+  "size": {
+    "width": 53.98,
+    "height": 85.60,
+    "unit": "mm",
+    "orientation": "vertical"
+  },
+  "sides": ["front", "back"],
+  "fields": [
+    {"id": "name", "label": "Full Name", "type": "text", "required": true},
+    {"id": "idNo", "label": "ID No", "type": "text", "required": true},
+    {"id": "className", "label": "Class", "type": "text", "required": false},
+    {"id": "dob", "label": "Date of Birth", "type": "text", "required": false},
+    {"id": "bloodGroup", "label": "Blood Group", "type": "text", "required": false}
+  ]
+}

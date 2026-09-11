@@ -10,6 +10,8 @@ from app.core.config import UPLOAD_DIR, PROCESSED_DIR  # pyrefly: ignore [missin
 from app.models.card_studio import (  # pyrefly: ignore [missing-import]
     CardProject,
     CardRecord,
+    CardBatch,
+    OrganizationData,
     CardTemplateMeta,
     ImportFileResponse,
     MatchPhotosRequest,
@@ -23,6 +25,7 @@ from app.services.cards.mapper import auto_detect_mappings  # pyrefly: ignore [m
 from app.services.cards.photo_matcher import match_photos_for_records  # pyrefly: ignore [missing-import]
 from app.services.cards.photo_adapter import process_card_photo  # pyrefly: ignore [missing-import]
 from app.services.cards.template_engine import list_card_templates, get_template_by_id, render_card_html, render_template_sample_html  # pyrefly: ignore [missing-import]
+from app.services.cards.sync_engine import sync_templates_from_web
 from app.services.cards.validator import run_preflight_validation  # pyrefly: ignore [missing-import]
 from app.services.cards.pdf_generator import generate_card_batch_pdf  # pyrefly: ignore [missing-import]
 from app.services.cards.project_store import (  # pyrefly: ignore [missing-import]
@@ -47,10 +50,16 @@ async def get_templates():
     return list_card_templates()
 
 
+@card_router.post("/templates/sync")
+async def sync_templates():
+    """Triggers the sync engine to download templates from the web platform."""
+    return await sync_templates_from_web()
+
+
 @card_router.get("/templates/{template_id}/preview")
 async def get_template_sample_preview(
     template_id: str,
-    side: str = Query("front", regex="^(front|back)$")
+    side: str = Query("front", pattern="^(front|back)$")
 ):
     """
     Renders a live realistic HTML sample preview of a template (Front or Back).
@@ -62,7 +71,7 @@ async def get_template_sample_preview(
 
 
 # ---------------- 2. IMPORT DATA ----------------
-@card_router.post("/import-file", response_model=ImportFileResponse)
+@card_router.post("/import-file")
 async def upload_and_parse_file(
     file: UploadFile = File(...),
     sheetName: Optional[str] = Form(None)
@@ -103,18 +112,19 @@ async def upload_and_parse_file(
 
     suggested = auto_detect_mappings(headers)
 
-    return ImportFileResponse(
-        success=True,
-        fileName=filename,
-        fileType=ext,
-        sheets=sheets,
-        detectedHeaders=headers,
-        totalRows=len(rows),
-        sampleRows=rows[:5],
-        suggestedMappings=suggested,
-        embeddedImagesCount=embedded_count,
-        tempFilePath=temp_file_path
-    )
+    return {
+        "success": True,
+        "fileName": filename,
+        "fileType": ext,
+        "sheets": sheets,
+        "detectedHeaders": headers,
+        "totalRows": len(rows),
+        "sampleRows": rows[:10],
+        "allRows": rows,
+        "suggestedMappings": suggested,
+        "embeddedImagesCount": embedded_count,
+        "tempFilePath": temp_file_path
+    }
 
 
 # ---------------- 3. MATCH PHOTOS ----------------
@@ -213,6 +223,45 @@ async def process_photo_queue(req: ProcessQueueRequest):
     }
 
 
+from pydantic import BaseModel
+
+
+class ProcessSinglePhotoRequest(BaseModel):
+    projectId: str
+    photoDataUrl: str
+    recordName: Optional[str] = "Student"
+    bgColor: Optional[str] = None
+    forceReprocess: Optional[bool] = False
+
+
+@card_router.post("/process-single-photo")
+async def process_single_photo(req: ProcessSinglePhotoRequest):
+    """
+    Processes a single student photo locally using 100% Free Local AI (₹0 cost).
+    Strips background and flattens onto the school's configured uniform background color.
+    """
+    project = load_project_from_disk(req.projectId)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    profile = project.photoProcessingProfile
+    if req.bgColor:
+        profile.bgColor = req.bgColor
+
+    photo_info, is_hit, log_steps = process_card_photo(
+        input_image_path=req.photoDataUrl,
+        profile=profile,
+        force_reprocess=req.forceReprocess or False,
+        record_name=req.recordName or "Student"
+    )
+
+    return {
+        "success": photo_info.status == "completed",
+        "processedPhoto": photo_info.model_dump(),
+        "isCacheHit": is_hit,
+        "logs": log_steps
+    }
+
 
 # ---------------- 5. PREFLIGHT VALIDATION ----------------
 @card_router.post("/validate/{project_id}", response_model=PreflightSummary)
@@ -243,6 +292,7 @@ async def validate_project(project_id: str):
 async def render_preview(req: RenderPreviewRequest):
     """
     Renders the HTML preview for a single card record (front or back).
+    If no records exist, renders a realistic template sample with the project's organization.
     """
     project = load_project_from_disk(req.projectId)
     if not project:
@@ -256,7 +306,37 @@ async def render_preview(req: RenderPreviewRequest):
         target_record = project.records[0]
 
     if not target_record:
-        raise HTTPException(status_code=400, detail="No records available to render.")
+        html = render_template_sample_html(
+            template_id=project.templateId,
+            side=req.side,
+            organization=project.organization
+        )
+        return HTMLResponse(content=html)
+
+    # If record has a photo that is not yet processed into card cache, process it locally on-the-fly!
+    if target_record.photo and target_record.photo.originalPath:
+        proc_url = target_record.processedPhoto.processedUrl if target_record.processedPhoto else ""
+        if not proc_url or not proc_url.startswith("/processed/card_cache/"):
+            try:
+                photo_info, _, _ = process_card_photo(
+                    input_image_path=target_record.photo.originalPath,
+                    profile=project.photoProcessingProfile,
+                    force_reprocess=False,
+                    record_name=target_record.fields.get("name") or "Student"
+                )
+                if photo_info.status == "completed":
+                    target_record.processedPhoto = photo_info
+                    if target_record.photo:
+                        target_record.photo.processedPath = photo_info.processedUrl
+                    for b in project.batches:
+                        for br in b.records:
+                            if br.id == target_record.id:
+                                br.processedPhoto = photo_info
+                                if br.photo:
+                                    br.photo.processedPath = photo_info.processedUrl
+                    save_project_to_disk(project)
+            except Exception as proc_err:
+                logger.warning(f"On-the-fly photo process error: {proc_err}")
 
     html = render_card_html(
         template_id=project.templateId,
@@ -268,9 +348,27 @@ async def render_preview(req: RenderPreviewRequest):
     return HTMLResponse(content=html)
 
 
+@card_router.post("/render-live-sample")
+async def render_live_sample(
+    templateId: str = Query("school-modern-blue"),
+    side: str = Query("front"),
+    org: Optional[OrganizationData] = None
+):
+    """
+    Renders live HTML preview dynamically as the user types school details during project setup.
+    """
+    html = render_template_sample_html(
+        template_id=templateId,
+        side=side,
+        organization=org
+    )
+    return HTMLResponse(content=html)
+
+
+
 # ---------------- 7. GENERATE PDF / BATCH ----------------
 @card_router.post("/generate-pdf")
-async def generate_pdf(req: GenerateBatchRequest):
+def generate_pdf(req: GenerateBatchRequest):
     """
     Generates a print-ready 300 DPI PDF (PVC CR80 or A4 Sheet) and returns the file download.
     """
@@ -331,3 +429,100 @@ async def delete_project(project_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found or could not be deleted.")
     return {"success": True, "message": "Project deleted successfully."}
+
+
+# ---------------- 9. BATCH SESSIONS & LOCKING ----------------
+@card_router.post("/projects/{project_id}/batches/{batch_id}/lock")
+async def lock_batch_for_print(project_id: str, batch_id: str):
+    """Locks a batch session so no further changes can be made by school web form."""
+    project = load_project_from_disk(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    found = False
+    for b in project.batches:
+        if b.id == batch_id:
+            b.status = "LOCKED_FOR_PRINT"
+            found = True
+            break
+
+    if not found:
+        # If no batches existed, initialize batch 1 as locked
+        from app.models.card_studio import CardBatch
+        project.batches = [
+            CardBatch(
+                id=batch_id,
+                batchNumber=1,
+                name="Batch 1",
+                status="LOCKED_FOR_PRINT",
+                totalRecords=len(project.records),
+                records=project.records
+            )
+        ]
+
+    project.status = "LOCKED_FOR_PRINT"
+    save_project_to_disk(project)
+    return {"success": True, "message": f"Batch {batch_id} locked for printing.", "project": project}
+
+
+@card_router.post("/projects/{project_id}/batches/new")
+async def create_new_batch(project_id: str, name: Optional[str] = None):
+    """Creates a new batch session (e.g. for late admissions / next session)."""
+    project = load_project_from_disk(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    from app.models.card_studio import CardBatch
+    next_num = len(project.batches) + 1
+    new_batch_id = f"batch_{uuid.uuid4().hex[:6]}"
+    new_batch = CardBatch(
+        id=new_batch_id,
+        batchNumber=next_num,
+        name=name or f"Batch {next_num} (Late Entries)",
+        status="COLLECTING",
+        totalRecords=0,
+        records=[]
+    )
+    project.batches.append(new_batch)
+    project.currentBatchId = new_batch_id
+    project.status = "COLLECTING"
+    save_project_to_disk(project)
+    return {"success": True, "batch": new_batch, "project": project}
+
+
+# ---------------- 10. CUSTOM TEMPLATE BACKGROUND UPLOAD ----------------
+@card_router.post("/templates/custom-upload")
+async def upload_custom_template_background(
+    file: UploadFile = File(...),
+    templateName: str = Form(...),
+    orientation: str = Form("vertical")
+):
+    """Uploads a custom blank template background image (PNG/JPG) for a private school template."""
+    file_bytes = await file.read()
+    ext = os.path.splitext(file.filename or ".png")[1].lower()
+    if ext not in [".png", ".jpg", ".jpeg", ".svg"]:
+        raise HTTPException(status_code=400, detail="Only PNG, JPG, or SVG backgrounds are supported.")
+
+    custom_id = f"custom-{uuid.uuid4().hex[:8]}"
+    out_dir = os.path.join(UPLOAD_DIR, "custom_templates", custom_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    bg_path = os.path.join(out_dir, f"background{ext}")
+    with open(bg_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Generate data url for preview
+    import base64
+    b64 = base64.b64encode(file_bytes).decode("utf-8")
+    mime = "image/svg+xml" if ext == ".svg" else ("image/jpeg" if "jp" in ext else "image/png")
+    data_url = f"data:{mime};base64,{b64}"
+
+    return {
+        "success": True,
+        "templateId": custom_id,
+        "templateName": templateName,
+        "orientation": orientation,
+        "backgroundUrl": data_url,
+        "filePath": bg_path
+    }
+

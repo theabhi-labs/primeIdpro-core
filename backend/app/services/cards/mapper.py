@@ -24,7 +24,7 @@ FIELD_ALIASES: Dict[str, List[str]] = {
         "member_id", "member_no", "membership_id", "membership_no", "card_no", "card_number"
     ],
     "class": [
-        "class", "standard", "std", "grade", "class_name", "standard_name", "course_year"
+        "class", "standard", "std", "grade", "class_name", "standard_name", "course_year", "class_section", "class_and_section", "class_sec"
     ],
     "section": [
         "section", "sec", "division", "div", "batch", "group"
@@ -46,20 +46,20 @@ FIELD_ALIASES: Dict[str, List[str]] = {
         "mother_name", "mother name", "mother's name", "mothers_name", "mother"
     ],
     "dob": [
-        "dob", "date_of_birth", "date of birth", "birth_date", "birthdate"
+        "dob", "date_of_birth", "date of birth", "birth_date", "birthdate", "date_of_birth_dob"
     ],
     "bloodGroup": [
         "blood_group", "blood group", "blood", "bg", "blood_grp", "b_group"
     ],
     "mobile": [
         "mobile", "mobile_no", "mobile number", "phone", "phone_no", "phone_number",
-        "contact", "contact_no", "contact_number", "emergency_mobile", "cell", "telephone"
+        "contact", "contact_no", "contact_number", "emergency_mobile", "cell", "telephone", "mobile_no_phone"
     ],
     "email": [
         "email", "email_id", "email_address", "mail", "work_email"
     ],
     "address": [
-        "address", "residential_address", "residence", "home_address", "addr", "location"
+        "address", "residential_address", "residence", "home_address", "addr", "location", "full_residential_address"
     ],
     "photo": [
         "photo", "photo_name", "photo_path", "image", "image_name", "image_path",

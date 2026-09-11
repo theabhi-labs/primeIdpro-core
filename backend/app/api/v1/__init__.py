@@ -21,7 +21,10 @@ from app.api.v1.card_studio import card_router
 print("[api_v1] 7. importing credits", flush=True)
 from app.api.v1.credits import credit_router
 
-print("[api_v1] 8. all routers imported!", flush=True)
+print("[api_v1] 8. importing auth", flush=True)
+from app.api.v1.auth import router as auth_router
+
+print("[api_v1] 9. all routers imported!", flush=True)
 
 api_v1_router = APIRouter()
 
@@ -32,6 +35,7 @@ api_v1_router.include_router(project_router)
 api_v1_router.include_router(session_router)
 api_v1_router.include_router(card_router)
 api_v1_router.include_router(credit_router)
+api_v1_router.include_router(auth_router)
 
 __all__ = ["api_v1_router"]
 

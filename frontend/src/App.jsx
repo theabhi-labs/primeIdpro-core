@@ -8,7 +8,7 @@ import usePhotoProcessing from './hooks/usePhotoProcessing';
 import usePrintSettings from './hooks/usePrintSettings';
 import Toast from './components/Common/Toast';
 import LoadingSpinner from './components/Common/LoadingSpinner';
-import CardStudioWorkspace from './components/CardStudio/CardStudioWorkspace';
+import CardStudioRoot from './components/CardStudio/CardStudioRoot';
 import RecommendationBanner from './components/Credits/RecommendationBanner';
 import CreditMeterBadge from './components/Credits/CreditMeterBadge';
 import ConnectOnlineModal from './components/Credits/ConnectOnlineModal';
@@ -16,6 +16,8 @@ import LiveKioskGallery from './components/Studio/LiveKioskGallery';
 import CounterQrModal from './components/Studio/CounterQrModal';
 import { useCredits } from './context/CreditContext';
 import { getCountries, saveProject, getOrCreateSession, extractErrorMessage, generateSheetPdf, downloadBlob, validateImage } from './services/api';
+import api from './services/api';
+import FirstTimeSetup from './components/Auth/FirstTimeSetup';
 
 
 import {
@@ -48,7 +50,10 @@ import {
   Phone,
   ExternalLink,
   X,
-  Trash2
+  Trash2,
+  Menu,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 function App() {
@@ -81,9 +86,54 @@ function App() {
   const [deviceState, setDeviceState] = useState(null);
   const [showCounterQrModal, setShowCounterQrModal] = useState(false);
   const [currentWorkspace, setCurrentWorkspace] = useState('passport'); // 'passport' | 'card-studio'
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await api.get('/auth/status');
+        if (res.data?.success && res.data?.loggedIn) {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (e) {
+        setIsAuthenticated(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
 
   const fileInputRef = useRef(null);
+
+  // Network & AI Engine Live Status Tracking
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setToast({ type: 'success', message: '🟢 Cloud Active (Online)' });
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setToast({ type: 'info', message: '🟡 Local Mode (Offline)' });
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
 
 
 
@@ -763,9 +813,17 @@ function App() {
   const currentCountryObj = countries.find(c => c.code === selectedCountry) || { name: 'India', standard: '35x45 mm' };
 
   // -------- Render (Fixed 100vh Single-Page Dashboard Layout) --------
+  if (checkingAuth) {
+    return <div className="h-screen w-screen bg-[#111827] flex items-center justify-center"><Loader2 className="animate-spin text-cyan-500" size={32} /></div>;
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#111827] text-white font-sans selection:bg-cyan-500/30">
       
+      {!isAuthenticated && (
+        <FirstTimeSetup onLoginSuccess={() => setIsAuthenticated(true)} />
+      )}
+
       <div className="flex-1 flex flex-row overflow-hidden relative">
       {/* Hidden File Input for Clean Top-Bar & Quick Uploads */}
       <input
@@ -779,68 +837,117 @@ function App() {
 
 
       {/* ================= 1. SIDEBAR NAVIGATION (LEFT PANEL) ================= */}
-      <aside className="w-64 h-full bg-slate-950 border-r border-slate-800 flex flex-col justify-between p-4 z-20 shrink-0 select-none">
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} h-full bg-slate-950 border-r border-slate-800 flex flex-col justify-between p-4 z-20 shrink-0 select-none transition-all duration-300`}>
         
-        {/* Top: Brand Logo */}
+        {/* Top: Brand Logo & Toggle */}
         <div>
-          <div className="flex items-center gap-3 px-2 py-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
-              <Camera className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-lg tracking-tight text-white">Prime<span className="text-cyan-400">ID</span></span>
-                <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">PRO</span>
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} mb-6`}>
+            {!isSidebarCollapsed && (
+              <div className="flex items-center gap-3 px-2 py-1">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20 shrink-0">
+                  <Camera className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-black text-lg tracking-tight text-white">Prime<span className="text-cyan-400">ID</span></span>
+                    <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">PRO</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">Biometric Suite</p>
+                </div>
               </div>
-              <p className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">Biometric Suite</p>
-            </div>
+            )}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2 rounded-xl bg-slate-900/50 hover:bg-slate-800 text-slate-400 hover:text-white transition-all cursor-pointer border border-slate-800"
+              title="Toggle Sidebar"
+            >
+              {isSidebarCollapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
+            </button>
           </div>
 
           {/* Navigation Links */}
-          <nav className="mt-8 space-y-1.5">
+          <nav className="mt-4 space-y-1.5">
             {/* Passport Studio link */}
             <button
               type="button"
               onClick={() => setCurrentWorkspace('passport')}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
                 currentWorkspace === 'passport'
                   ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
               }`}
+              title="Passport Studio"
             >
-              <Camera className="w-4 h-4 text-cyan-400" />
-              <span>Passport Studio</span>
-              {currentWorkspace === 'passport' && (
-                <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+              <Camera className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && (
+                <>
+                  <span>Passport Studio</span>
+                  {currentWorkspace === 'passport' && (
+                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+                  )}
+                </>
               )}
             </button>
 
             {/* Inactive links */}
-            <div className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-500 hover:text-slate-400 hover:bg-slate-900/40 font-medium text-sm transition-all cursor-not-allowed opacity-60">
-              <FileText className="w-4 h-4" />
-              <span>ATS Resumes</span>
-              <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
+            <div 
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl text-slate-500 hover:text-slate-400 hover:bg-slate-900/40 font-medium text-sm transition-all cursor-not-allowed opacity-60`}
+              title="ATS Resumes (Soon)"
+            >
+              <FileText className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && (
+                <>
+                  <span>ATS Resumes</span>
+                  <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
+                </>
+              )}
             </div>
 
-            <div className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-500 hover:text-slate-400 hover:bg-slate-900/40 font-medium text-sm transition-all cursor-not-allowed opacity-60">
-              <CreditCard className="w-4 h-4" />
-              <span>Card Studio</span>
-              <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
-            </div>
+            {/* Card Studio link */}
+            <button
+              type="button"
+              onClick={() => setCurrentWorkspace('card-studio')}
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
+                currentWorkspace === 'card-studio'
+                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
+              }`}
+              title="Card Studio"
+            >
+              <CreditCard className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && (
+                <>
+                  <span>Card Studio</span>
+                  {currentWorkspace === 'card-studio' ? (
+                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+                  ) : (
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-cyan-500/10 rounded text-cyan-400 border border-cyan-500/20 font-bold">
+                      v2.0
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
           </nav>
 
         </div>
 
         {/* Sidebar Bottom: Credit & Sync / Connect Widget */}
-        <div className="pt-4 border-t border-slate-900">
-          <CreditMeterBadge className="w-full" />
+        <div className={`pt-4 border-t border-slate-900 ${isSidebarCollapsed ? 'flex justify-center' : ''}`}>
+          {isSidebarCollapsed ? (
+            <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-cyan-500 cursor-pointer" title="Credits">
+              <Zap size={18} />
+            </div>
+          ) : (
+            <CreditMeterBadge className="w-full" />
+          )}
         </div>
       </aside>
 
       {/* ================= 2. MAIN CONTENT AREA (RIGHT SIDE) ================= */}
       {currentWorkspace === 'card-studio' ? (
         <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-          <CardStudioWorkspace setToast={setToast} />
+          <CardStudioRoot setToast={setToast} />
         </main>
       ) : (
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900/40 relative">
@@ -874,42 +981,42 @@ function App() {
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
 
-            {/* Switch button: Normal Photos & Restore Photo */}
-            <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs ml-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setRestoreVintageMode(false);
-                  setToast({ type: 'info', message: '📷 Normal Photos Mode Active' });
-                }}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  !restoreVintageMode
-                    ? 'bg-cyan-500 text-slate-950 shadow'
-                    : 'text-slate-400 hover:text-white'
+            {/* Live AI Engine & Offline/Online Status Indicator */}
+            <div
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs ml-2 transition-all shadow-sm ${
+                isOnline
+                  ? 'bg-slate-900/90 border-slate-800 text-slate-200'
+                  : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+              }`}
+              title={
+                isOnline
+                  ? 'Smart AI Engine: Online Cloud RMBG-2.0 active with instant local offline fallback'
+                  : 'Offline Mode: 100% Free Local AI Engine Active'
+              }
+            >
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  isOnline
+                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse'
+                    : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
                 }`}
-                title="Normal Photos"
-              >
-                <Camera size={13} />
-                <span>Normal Photos</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRestoreVintageMode(true);
-                  setToast({ type: 'success', message: '✨ Restore Photo Mode Active!' });
-                }}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  restoreVintageMode
-                    ? 'bg-cyan-500 text-slate-950 shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Restore Photo"
-              >
-                <Sparkles size={13} />
-                <span>Restore Photo</span>
-              </button>
+              />
+              <span className="font-extrabold text-[11px] tracking-wide flex items-center gap-1.5">
+                {isOnline ? (
+                  <>
+                    <Sparkles size={12} className="text-cyan-400" />
+                    <span>Cloud Active</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap size={12} className="text-amber-400" />
+                    <span>Local Mode</span>
+                  </>
+                )}
+              </span>
             </div>
           </div>
+
 
 
 
@@ -1144,11 +1251,14 @@ function App() {
 
             {/* AI Optimization Text */}
             <div className="flex items-center gap-1.5 text-slate-400 font-medium">
-              <Zap size={13} className="text-cyan-400 fill-cyan-400" />
-              <span className="text-[11px] text-slate-300">PrimeID AI 300 DPI Active</span>
+              <Zap size={13} className={isOnline ? "text-cyan-400 fill-cyan-400" : "text-amber-400 fill-amber-400"} />
+              <span className="text-[11px] text-slate-300">
+                {isOnline ? "Cloud Active" : "Local Mode"}
+              </span>
             </div>
           </div>
         </div>
+
 
       </main>
       )}

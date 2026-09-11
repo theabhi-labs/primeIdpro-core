@@ -11,9 +11,12 @@ const APP_VERSION = "1.0.0";
 // Directory resolution
 const getUserDataPath = () => {
     try {
-        return app ? app.getPath("userData") : path.join(os.homedir(), ".primeidpro");
+        if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
+            return path.join(process.env.LOCALAPPDATA, APP_NAME);
+        }
+        return app ? app.getPath("userData") : path.join(os.homedir(), `.${APP_NAME.toLowerCase()}`);
     } catch {
-        return path.join(os.homedir(), ".primeidpro");
+        return path.join(os.homedir(), `.${APP_NAME.toLowerCase()}`);
     }
 };
 

@@ -134,111 +134,11 @@ def _save_wallet(wallet: Dict[str, Any]):
 
 def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
     """
-    Syncs live token balance with primeidpro.online cloud server.
-    Preserves local debits while detecting online top-ups and recharges.
+    DEPRECATED IN V1.
+    Live token balance is now managed by Electron's CreditManager and SyncQueue.
     """
-    global _last_remote_sync_time
-    now = time.time()
-    if not force and (now - _last_remote_sync_time) < 4:
-        return
-
-    account_id = wallet.get("connectedAccount")
-    if not wallet.get("isConnected") or not account_id:
-        return
-
-    _last_remote_sync_time = now
-    try:
-        machine_id = get_machine_hardware_id()
-        req_url = f"{CENTRAL_API_URL}/devices/sync-wallet"
-        unsettled = wallet.get("unsettled_debit_tokens", 0)
-        payload = {
-            "email": account_id.strip(),
-            "installationId": machine_id,
-            "unsettledTokens": unsettled
-        }
-        req = urllib.request.Request(
-            req_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "User-Agent": "PrimeIDPro-Desktop/1.0.0"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as res:
-            res_body = res.read().decode("utf-8")
-            parsed = json.loads(res_body)
-            if parsed.get("success"):
-                data = parsed.get("data", {})
-                cloud_bal = data.get("walletBalance")
-                if cloud_bal is not None:
-                    cloud_bal = int(cloud_bal)
-                    prev_baseline = wallet.get("cloudBalanceBaseline")
-                    unsettled = wallet.get("unsettled_debit_tokens", 0)
-
-                    if prev_baseline is None:
-                        # Initial sync baseline setup
-                        wallet["cloudBalanceBaseline"] = cloud_bal
-                        wallet["credits"] = cloud_bal
-                    elif cloud_bal > prev_baseline and unsettled == 0:
-                        # Online top-up / recharge detected on web portal
-                        recharge_delta = cloud_bal - prev_baseline
-                        wallet["cloudBalanceBaseline"] = cloud_bal
-                        wallet["credits"] = max(0, wallet.get("credits", 0) + recharge_delta)
-                        tx = {
-                            "id": f"tx_{int(time.time())}_recharge",
-                            "timestamp": int(time.time()),
-                            "type": "CREDIT",
-                            "description": f"Online Top-up (+{recharge_delta} tokens)",
-                            "amount": recharge_delta,
-                            "balanceAfter": wallet["credits"],
-                        }
-                        wallet.setdefault("transactions", []).append(tx)
-                        logger.info(f"🎉 Online recharge detected: +{recharge_delta} tokens for {account_id}")
-                    else:
-                        # The server processed our unsettled tokens, update our baseline and clear unsettled
-                        wallet["cloudBalanceBaseline"] = cloud_bal
-                        wallet["credits"] = cloud_bal
-
-                    # Clear unsettled tokens as they've been sent to the server
-                    if unsettled > 0:
-                        wallet["unsettled_debit_tokens"] = 0
-
-                    if data.get("centerCode"):
-                        wallet["centerCode"] = data.get("centerCode")
-                    
-                    _save_wallet(wallet)
-                    if data.get("centerId") and wallet.get("centerCode"):
-                        _sync_sqlite_device_state(
-                            center_id=data.get("centerId"),
-                            device_id="PIP-DESK-ACTIVE",
-                            center_name=account_id.strip(),
-                            center_code=wallet.get("centerCode"),
-                            wallet_balance=wallet["credits"]
-                        )
-                    logger.debug(f"🔄 Synced wallet balance: {wallet['credits']} tokens (Cloud: {cloud_bal}, Unsettled: {unsettled})")
-            else:
-                # If success is false, check if device was deleted or forced logged out
-                action = parsed.get("action")
-                msg = str(parsed.get("message", "")).lower()
-                if action == "FORCE_LOGOUT" or "not found" in msg or "inactive" in msg or "deleted" in msg or "invalid" in msg:
-                    logger.warning("Device was rejected or deleted by central server. Auto-disconnecting...")
-                    wallet["isConnected"] = False
-                    wallet["connectedAccount"] = None
-                    wallet["licenseKey"] = None
-                    wallet["deviceToken"] = None
-                    wallet["tier"] = "UNCONNECTED"
-                    _save_wallet(wallet)
-
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403, 404):
-            logger.warning(f"Device unauthorized or not found on central server ({e.code}). Auto-disconnecting...")
-            wallet["isConnected"] = False
-            wallet["connectedAccount"] = None
-            wallet["licenseKey"] = None
-            wallet["deviceToken"] = None
-            wallet["tier"] = "UNCONNECTED"
-            _save_wallet(wallet)
-        else:
-            logger.debug(f"Live balance sync HTTP error: {e.code}")
-    except Exception as e:
-        logger.debug(f"Live balance sync check error: {e}")
+    logger.warning("sync_cloud_wallet_balance called but is deprecated in V1. Use Electron CreditManager.")
+    return
 
 
 def get_wallet_status() -> Dict[str, Any]:
@@ -404,79 +304,12 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
 
 def deduct_credits(action_type: str, count: int = 1, description: Optional[str] = None) -> Dict[str, Any]:
     """
-    Deducts tokens based on action:
-      - 'passport': 2 tokens per sheet / print order
-      - 'card': 5 tokens per ID card
+    DEPRECATED IN V1.
+    Credits are now managed by Electron's IPC router and CreditManager.
+    React frontend now calls window.electronAPI.credits.reserve() directly.
     """
-    wallet = _load_wallet()
-
-    if not wallet.get("isConnected"):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "message": "Account Connection Required. Please connect your PrimeIdPro.online account to print or export.",
-                "action": "CONNECT_REQUIRED",
-                "connectUrl": "https://primeidpro.online/login",
-            },
-        )
-
-    current_balance = wallet.get("credits", 0)
-
-    if action_type == "passport":
-        cost = PASSPORT_COST * max(1, count)
-        desc = description or f"Passport Photo Export/Print ({count} sheet{'s' if count > 1 else ''})"
-    elif action_type == "card":
-        cost = CARD_COST_PER_UNIT * max(1, count)
-        desc = description or f"Card Studio ID Card Export/Print ({count} card{'s' if count > 1 else ''})"
-    else:
-        cost = count
-        desc = description or "Custom Export Action"
-
-    if current_balance < cost:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "message": f"Insufficient Token Balance! Required: {cost} tokens, Available: {current_balance} tokens.",
-                "required": cost,
-                "available": current_balance,
-                "action": "RECHARGE_REQUIRED",
-                "connectUrl": "https://primeidpro.online/billing",
-            },
-        )
-
-    new_balance = current_balance - cost
-    wallet["credits"] = new_balance
-    wallet["unsettled_debit_tokens"] = wallet.get("unsettled_debit_tokens", 0) + cost
-    wallet["totalSpentTokens"] = wallet.get("totalSpentTokens", 0) + cost
-
-    tx = {
-        "id": f"tx_{int(time.time())}_{action_type}",
-        "timestamp": int(time.time()),
-        "type": "DEBIT",
-        "description": desc,
-        "amount": -cost,
-        "balanceAfter": new_balance,
-    }
-    wallet.setdefault("transactions", []).append(tx)
-    _save_wallet(wallet)
-
-    account_id = wallet.get("connectedAccount", "Unknown")
-    if wallet.get("centerCode"):
-        _sync_sqlite_device_state(
-            center_id="PIP-CENTER-ID",
-            device_id="PIP-DESK-ACTIVE",
-            center_name=account_id.strip() if isinstance(account_id, str) else "Account",
-            center_code=wallet.get("centerCode"),
-            wallet_balance=new_balance
-        )
-
-    logger.info(f"[TOKEN DEBIT] Deducted {cost} tokens for {action_type}. Remaining: {new_balance}")
-    return {
-        "success": True,
-        "deducted": cost,
-        "remainingCredits": new_balance,
-        "transactionId": tx["id"],
-    }
+    logger.warning("deduct_credits called but is deprecated in V1. Use Electron CreditManager via IPC.")
+    raise HTTPException(status_code=410, detail="Credit deduction has moved to Electron IPC in V1.")
 
 
 def disconnect_account() -> Dict[str, Any]:

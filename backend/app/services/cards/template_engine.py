@@ -5,10 +5,16 @@ import base64
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 import jinja2
-import qrcode
+
+try:
+    import qrcode
+    HAS_QRCODE = True
+except ImportError:
+    qrcode = None
+    HAS_QRCODE = False
+
 from app.core.config import PROCESSED_DIR
 from app.models.card_studio import CardTemplateMeta, CardRecord, OrganizationData
-
 
 
 logger = logging.getLogger("primeidpro.cards.templates")
@@ -20,23 +26,25 @@ def generate_qr_code_base64(data: str) -> str:
     """Generates a high-quality QR code image as a base64 Data URL."""
     if not data:
         return ""
-    try:
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=10,
-            border=2,
-        )
-        qr.add_data(str(data))
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        return f"data:image/png;base64,{b64}"
-    except Exception as e:
-        logger.warning(f"QR generation error for data '{data}': {e}")
-        return ""
+    if HAS_QRCODE and qrcode is not None:
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=10,
+                border=2,
+            )
+            qr.add_data(str(data))
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            return f"data:image/png;base64,{b64}"
+        except Exception as e:
+            logger.warning(f"QR generation error for data '{data}': {e}")
+            return ""
+    return ""
 
 
 def list_card_templates() -> List[CardTemplateMeta]:
@@ -126,6 +134,28 @@ def render_card_html(
     # 2. Record fields
     for k, v in record.fields.items():
         context[k] = v
+
+    # Automatic Field Fallbacks & Aliases for Templates
+    if "phone" in context and "mobile" not in context:
+        context["mobile"] = context["phone"]
+    if "mobile" in context and "phone" not in context:
+        context["phone"] = context["mobile"]
+    if "className" in context and "class" not in context:
+        context["class"] = context["className"]
+    if "class" in context and "className" not in context:
+        context["className"] = context["class"]
+    if "rollNumber" in context and "rollNo" not in context:
+        context["rollNo"] = context["rollNumber"]
+    if "rollNo" in context and "rollNumber" not in context:
+        context["rollNumber"] = context["rollNo"]
+    if "address" in context and "residentialAddress" not in context:
+        context["residentialAddress"] = context["address"]
+    if "fatherName" in context and "father" not in context:
+        context["father"] = context["fatherName"]
+    if "motherName" in context and "mother" not in context:
+        context["mother"] = context["motherName"]
+    if "emergencyContact" not in context and "phone" in context:
+        context["emergencyContact"] = context["phone"]
 
     # 3. Photo URL resolution with automatic Base64 Data URI encoding
     photo_url = ""
@@ -219,13 +249,25 @@ def render_template_sample_html(
     """
     sample_org = organization or OrganizationData(
         name="DELHI PUBLIC ACADEMY",
-        address="Sector 4, R.K. Puram, New Delhi • Ph: 011-26170000",
+        subtitle="Inter College",
+        address="Cantt Road, Varanasi, Uttar Pradesh - 221002",
         phone="+91 98765 43210",
         email="info@academy.edu.in",
         website="www.academy.edu.in",
         session="2026-27",
         logo=SAMPLE_LOGO,
-        signature=SAMPLE_SIGN
+        signature=SAMPLE_SIGN,
+        signatureLabel="Principal",
+        estdText="ESTD. 2010",
+        watermarkText="ESTD. 2010",
+        backTermsTitle="TERMS & CONDITIONS",
+        terms=[
+            "This card is non-transferable.",
+            "Loss of this card must be reported to the office immediately.",
+            "This card must be presented whenever required.",
+            "Cardholder is responsible for safe custody of this card."
+        ],
+        backFooterText="Emergency Contact : {phone}"
     )
 
     sample_fields = {
@@ -252,11 +294,23 @@ def render_template_sample_html(
     if template_id == "mhrsa-inter-college-vertical" and not organization:
         sample_org = OrganizationData(
             name="M.H.R.S.A.",
+            subtitle="INTER COLLEGE",
             address="Shahpur Jot Yusuf 'Hathila' Bahraich, Uttar Pradesh - 271801",
             phone="74088065057",
             session="2026-27",
             logo=SAMPLE_LOGO,
-            signature=SAMPLE_SIGN
+            signature=SAMPLE_SIGN,
+            signatureLabel="Principal",
+            estdText="ESTD. 2010",
+            watermarkText="ESTD. 2010",
+            backTermsTitle="TERMS & CONDITIONS",
+            terms=[
+                "This card is non-transferable.",
+                "This card is the property of M.H.R.S.A. Inter College.",
+                "Loss of this card must be reported to the office immediately.",
+                "This card must be presented whenever required."
+            ],
+            backFooterText="Emergency Contact : {phone}"
         )
 
 

@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, globalShortcut } = require("electron");
 const path = require("path");
 const config = require("./src/config");
 const logger = require("./src/logging/logger");
@@ -13,6 +13,7 @@ const cleanupManager = require("./src/cleanup/cleanupManager");
 const syncQueue = require("./src/network/syncQueue");
 const jobPoller = require("./src/network/jobPoller");
 const heartbeatWorker = require("./src/network/heartbeatWorker");
+const accountVerifier = require("./src/device/accountVerifier");
 const { deviceManager } = require("./src/device/deviceManager");
 const updateManager = require("./src/updater/updateManager");
 const { registerIpcHandlers } = require("./src/ipc/router");
@@ -57,6 +58,9 @@ async function createWindow() {
     setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.setAlwaysOnTop(false);
+            // Apply Content Protection after the window is fully initialized
+            mainWindow.setContentProtection(true);
+            logger.info("SCREENSHOT_PROTECTION_ENABLED");
         }
     }, 1000);
 
@@ -119,15 +123,25 @@ if (!gotTheLock) {
             // 7. Start Sync Queue Background Worker
             syncQueue.start();
 
-            // 8. Start Device Heartbeat Worker & Inbound Job Poller
+            // 8. Start Device Heartbeat Worker & Inbound Job Poller & Account Verifier
             heartbeatWorker.start();
             jobPoller.start();
+            accountVerifier.start();
 
             // 9. Register All IPC Handlers
             registerIpcHandlers();
 
             // 10. Create Main Application Window IMMEDIATELY for instant UI feedback
             await createWindow();
+
+            // 10.5 Register Screenshot Attempt Listeners
+            const analyticsManager = require("./src/analytics/analyticsManager");
+            const trackScreenshot = () => {
+                logger.warn("SCREENSHOT_ATTEMPT_DETECTED");
+                analyticsManager.trackEvent("SCREENSHOT_ATTEMPT");
+            };
+            globalShortcut.register("PrintScreen", trackScreenshot);
+            globalShortcut.register("CommandOrControl+Shift+S", trackScreenshot);
 
             // 11. Launch & Health-Check Local Python/FastAPI Backend in parallel
             pythonManager.startBackend().then(() => {
@@ -147,9 +161,9 @@ if (!gotTheLock) {
                 "Application Startup Error",
                 `Failed to launch PrimeIdPro: ${err.message}`
             );
-            // Clean shutdown on startup error
             jobPoller.stop();
             heartbeatWorker.stop();
+            accountVerifier.stop();
             cleanupManager.stop();
             syncQueue.stop();
             pythonManager.stopBackend();
@@ -164,6 +178,7 @@ app.on("window-all-closed", () => {
     logger.info("WINDOW_ALL_CLOSED");
     jobPoller.stop();
     heartbeatWorker.stop();
+    accountVerifier.stop();
     cleanupManager.stop();
     syncQueue.stop();
     pythonManager.stopBackend();
@@ -178,6 +193,7 @@ app.on("before-quit", () => {
     logger.info("BEFORE_QUIT");
     jobPoller.stop();
     heartbeatWorker.stop();
+    accountVerifier.stop();
     cleanupManager.stop();
     syncQueue.stop();
     pythonManager.stopBackend();

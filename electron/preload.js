@@ -72,4 +72,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getApiUrl: () => ipcRenderer.sendSync("get-api-url"),
     printSheet: (html, options) => ipcRenderer.invoke("print:native", { html, options }),
     printSheetToPdf: (html, options) => ipcRenderer.invoke("print:pdf", { html, options }),
+    credits: {
+        getStatus: () => ipcRenderer.invoke("credits:status"),
+        reserve: (payload) => ipcRenderer.invoke("credits:reserve", payload),
+        consume: (txId) => ipcRenderer.invoke("credits:consume", { txId }),
+        release: (txId) => ipcRenderer.invoke("credits:release", { txId }),
+    },
+    analytics: {
+        trackEvent: (eventType, payload) => ipcRenderer.invoke("analytics:trackEvent", { eventType, payload }),
+    }
 });

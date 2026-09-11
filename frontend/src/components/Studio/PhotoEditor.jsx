@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import api, { restore4kEnhance, magicAiBgFix } from '../../services/api';
+import api, { restore4kEnhance } from '../../services/api';
 import {
   X,
   RotateCw,
@@ -13,15 +13,11 @@ import {
   Palette,
   Settings2,
   Sparkles,
-  Wand2,
   Sliders,
   SplitSquareVertical,
   CheckCircle2,
   Loader2,
   Zap,
-  PenTool,
-  ShieldCheck,
-  Flame,
 } from 'lucide-react';
 
 const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
@@ -35,12 +31,6 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
   const initialBg = photo?.bgColor || '#3b82f6';
   const [replaceBg, setReplaceBg] = useState(Boolean(photo?.bgColor));
   const [bgReplaceColor, setBgReplaceColor] = useState(initialBg);
-
-  // Magic Pen AI State & Spam/Multi-Click Guard
-  const [isMagicFixing, setIsMagicFixing] = useState(false);
-  const [magicStatusMessage, setMagicStatusMessage] = useState(null);
-  const [hasMagicApplied, setHasMagicApplied] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
 
   // AI 4K Restoration Tuning State
   const [clarityBoost, setClarityBoost] = useState(1.25);
@@ -56,15 +46,6 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
   const imgRef = useRef(null);
   const origImgRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Anti-spam cooldown timer countdown
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((c) => Math.max(0, c - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
 
   // Load transparent processed asset
   useEffect(() => {
@@ -220,40 +201,7 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
     }
   };
 
-  // Magic Pen AI Fix: On-Demand Ultra Background & Edge Matting with Anti-Spam Guard
-  const handleMagicAiBgFix = async () => {
-    const targetId = photo?.serverId || photo?.id;
-    if (!targetId || isMagicFixing || cooldown > 0) return;
 
-    setIsMagicFixing(true);
-    setMagicStatusMessage(null);
-    try {
-      const res = await magicAiBgFix(targetId, {
-        bgColor: replaceBg ? bgReplaceColor : '#FFFFFF',
-      });
-
-      const nextUrl = res?.data?.transparent_url || res?.data?.processed_url;
-      if (nextUrl) {
-        const newImg = new Image();
-        newImg.crossOrigin = 'Anonymous';
-        newImg.src = nextUrl;
-        newImg.onload = () => {
-          imgRef.current = newImg;
-          drawPreview();
-        };
-        setHasMagicApplied(true);
-        setMagicStatusMessage(res?.data?.message || '✨ Magic AI Cut applied successfully!');
-      }
-    } catch (err) {
-      console.error('Magic AI Fix failed:', err);
-      const errMsg = err?.response?.data?.detail || 'Magic AI background refinement completed with local engine.';
-      setMagicStatusMessage(errMsg);
-    } finally {
-      setIsMagicFixing(false);
-      // Set 3 second anti-spam cooldown
-      setCooldown(3);
-    }
-  };
 
   const handleSave = async () => {
     if (isSaving || !imgRef.current) return;
@@ -413,10 +361,10 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
 
         {/* Right Side: 4K AI Restoration & Fine Tune Controls */}
         <div className="w-full md:w-[400px] p-6 flex flex-col bg-[#0f172a] overflow-y-auto max-h-[92vh]">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-2">
               <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                <Wand2 size={18} />
+                <Sparkles size={18} />
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-white tracking-wide">4K AI Restoration</h3>
@@ -428,78 +376,26 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
             </button>
           </div>
 
-          <div className="space-y-5 flex-1 pr-1 text-xs">
-            {/* Magic Pen AI: 1-Click On-Demand Ultra Background & Edge Fix */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/40 space-y-3 relative overflow-hidden shadow-lg shadow-purple-950/30">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-purple-300 flex items-center gap-1.5">
-                  <PenTool size={14} className="text-purple-400" />
-                  Magic Pen AI (Edge Fix)
-                </span>
-                <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-wider ${
-                  hasMagicApplied
-                    ? 'bg-emerald-500 text-slate-950 flex items-center gap-1'
-                    : 'bg-purple-500 text-slate-950'
-                }`}>
-                  {hasMagicApplied ? '✓ AI Matting Active' : '✨ 1-Click Pen'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Fixes complex flyaway hair, irregular shadows, and messy edges in 1-click without re-processing other photos.
-              </p>
-
-              {magicStatusMessage && (
-                <div className="p-2 rounded-xl bg-slate-950/80 border border-purple-500/30 text-[11px] text-purple-300 flex items-center gap-1.5">
-                  <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
-                  <span className="truncate">{magicStatusMessage}</span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleMagicAiBgFix}
-                disabled={isMagicFixing || cooldown > 0}
-                className="w-full py-2.5 bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-500 hover:from-purple-400 hover:to-cyan-400 text-white font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
-              >
-                {isMagicFixing ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    <span>🪄 Magic Pen is Refining Edges...</span>
-                  </>
-                ) : cooldown > 0 ? (
-                  <>
-                    <ShieldCheck size={14} className="text-amber-300" />
-                    <span>⏳ Protected (Ready in {cooldown}s)</span>
-                  </>
-                ) : (
-                  <>
-                    <Wand2 size={14} />
-                    <span>{hasMagicApplied ? '🪄 Re-Run Magic Pen AI' : '🪄 Apply Magic Pen AI Fix'}</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* 1-Click 4K Restoration Action */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-slate-900 to-blue-950/40 border border-cyan-500/40 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-cyan-300 flex items-center gap-1.5">
+          <div className="space-y-4 flex-1 pr-1 text-xs">
+            {/* Compact 4K Super-Enhance Button */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-slate-900 to-blue-950/40 border border-cyan-500/30 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 shrink-0">
                   <Sparkles size={14} />
-                  AI 4K Super-Resolution
-                </span>
-                <span className="px-2 py-0.5 rounded bg-cyan-500 text-slate-950 font-black text-[9px]">4K CLARITY</span>
+                </div>
+                <div className="truncate">
+                  <p className="text-xs font-bold text-white truncate">4K Super-Resolution</p>
+                  <p className="text-[10px] text-slate-400 truncate">Auto-clarity & vintage denoise</p>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Removes paper scratches, grain noise, and yellow vintage hues while boosting eye and hair sharpness.
-              </p>
               <button
                 type="button"
                 onClick={handleApply4kRestoration}
                 disabled={isEnhancing}
-                className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
               >
-                {isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                <span>{isEnhancing ? 'Restoring in 4K...' : '⚡ Re-Apply 4K Super-Enhance'}</span>
+                {isEnhancing ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                <span>{isEnhancing ? 'Enhancing...' : '⚡ 4K Enhance'}</span>
               </button>
             </div>
 

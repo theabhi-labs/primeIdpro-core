@@ -12,6 +12,8 @@ const syncQueue = require("../network/syncQueue");
 const jobPoller = require("../network/jobPoller");
 const photoStager = require("../network/photoStager");
 const sqliteDb = require("../database/sqliteDb");
+const creditManager = require("../credits/creditManager");
+const analyticsManager = require("../analytics/analyticsManager");
 const { onlineJobAdapter } = require("../jobs/onlineJobAdapter");
 const updateManager = require("../updater/updateManager");
 const { getFullDiagnostics, getDiskSpaceInfo } = require("../diagnostics/diagnostics");
@@ -297,6 +299,48 @@ function registerIpcHandlers() {
     ipcMain.handle("device:revoke", () => {
         const status = deviceManager.revokeDevice();
         return { success: true, device: status };
+    });
+
+    // CREDITS
+    ipcMain.handle("credits:status", () => {
+        try {
+            const { balance, status } = creditManager.getBalance();
+            return { success: true, balance, status };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("credits:reserve", (event, { amount, reason, referenceId }) => {
+        try {
+            const txId = creditManager.reserve(amount, reason, referenceId);
+            return { success: true, txId };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("credits:consume", (event, { txId }) => {
+        try {
+            creditManager.consume(txId);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle("credits:release", (event, { txId }) => {
+        try {
+            creditManager.release(txId);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    // ANALYTICS
+    ipcMain.handle("analytics:trackEvent", (event, { eventType, payload }) => {
+        return analyticsManager.trackEvent(eventType, payload);
     });
 
     // POLLER & SYNC

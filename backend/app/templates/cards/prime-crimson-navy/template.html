@@ -1,0 +1,443 @@
+<style> body { margin: 0; padding: 0; overflow: hidden; }
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap');
+
+  .card-container {
+    width: 100vw;
+    height: 100vh;
+    background-color: #ffffff;
+    font-family: 'Montserrat', sans-serif;
+    position: relative;
+    overflow: hidden;
+    color: #1a2332;
+    box-sizing: border-box;
+  }
+
+  /* FRONT SIDE */
+  .front-top-shapes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 10vh;
+  }
+  .front-top-red-left {
+    position: absolute;
+    top: 0; left: 0;
+    width: 40vw; height: 3vh;
+    background: #c8102e;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  .front-top-red-right {
+    position: absolute;
+    top: 0; right: 0;
+    width: 40vw; height: 3vh;
+    background: #c8102e;
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+  .front-top-navy-left {
+    position: absolute;
+    top: 0; left: 0;
+    width: 30vw; height: 2vh;
+    background: #1a2332;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  .front-top-navy-right {
+    position: absolute;
+    top: 0; right: 0;
+    width: 30vw; height: 2vh;
+    background: #1a2332;
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  .front-header {
+    margin-top: 5vh;
+    text-align: center;
+  }
+  .front-logo {
+    width: 18vw;
+    height: 18vw;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .front-school-name {
+    font-size: 4.5vw;
+    font-weight: 800;
+    color: #1a2332;
+    margin-top: 1vh;
+    text-transform: uppercase;
+    letter-spacing: 0.5vw;
+  }
+  .front-school-slogan {
+    font-size: 2vw;
+    color: #c8102e;
+    text-transform: uppercase;
+    letter-spacing: 0.3vw;
+    margin-top: 0.5vh;
+  }
+
+  .front-photo-wrapper {
+    width: 36vw;
+    height: 42vw;
+    margin: 4vh auto 0;
+    border-radius: 4vw;
+    border: 0.6vw solid #e2e8f0;
+    overflow: hidden;
+    background-color: #f8fafc;
+    position: relative;
+    box-shadow: 0 2vw 4vw rgba(0,0,0,0.05);
+  }
+  .front-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .front-student-info {
+    text-align: center;
+    margin-top: 3vh;
+    position: relative;
+    z-index: 10;
+  }
+  .front-student-name {
+    font-size: 6vw;
+    font-weight: 800;
+    color: #1a2332;
+  }
+  .front-student-title {
+    font-size: 3vw;
+    color: #c8102e;
+    margin-top: 0.5vh;
+    font-weight: 600;
+  }
+
+  /* Bottom Shapes */
+  .front-bottom-red {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 42vh;
+    background: #c8102e;
+    clip-path: polygon(0 15%, 100% 0, 100% 100%, 0 100%);
+    z-index: 1;
+  }
+  .front-bottom-navy {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 40vh;
+    background: #1a2332;
+    clip-path: polygon(0 15%, 100% 0, 100% 100%, 0 100%);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 0 8vw 6vh 8vw;
+  }
+
+  .front-details-grid {
+    display: grid;
+    grid-template-columns: 24vw 1fr;
+    gap: 1.2vh 2vw;
+    color: #ffffff;
+    font-size: 3.2vw;
+  }
+  .detail-label {
+    font-weight: 400;
+    color: #94a3b8;
+  }
+  .detail-value {
+    font-weight: 600;
+    color: #ffffff;
+  }
+  .detail-value::before {
+    content: ': ';
+    margin-right: 1vw;
+    font-weight: 400;
+    color: #94a3b8;
+  }
+
+
+  /* BACK SIDE */
+  .back-top-red {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 40vh;
+    background: #c8102e;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 80%);
+    z-index: 1;
+  }
+  .back-top-navy {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 38vh;
+    background: #1a2332;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 80%);
+    z-index: 2;
+    padding: 6vh 8vw;
+  }
+  .back-terms-title {
+    color: #c8102e;
+    font-size: 3.8vw;
+    font-weight: 800;
+    margin-bottom: 2vh;
+    text-transform: uppercase;
+  }
+  .back-terms-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .back-terms-list li {
+    color: #e2e8f0;
+    font-size: 2.8vw;
+    margin-bottom: 1vh;
+    padding-left: 2vw;
+    position: relative;
+    line-height: 1.3;
+  }
+  .back-terms-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.8vh;
+    width: 0.8vw;
+    height: 0.8vw;
+    background-color: #c8102e;
+    border-radius: 50%;
+  }
+
+  .back-contact-section {
+    position: absolute;
+    top: 45vh;
+    left: 8vw;
+    right: 8vw;
+    z-index: 5;
+  }
+  .contact-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 2vh;
+  }
+  .contact-icon {
+    width: 5vw;
+    height: 5vw;
+    background-color: #c8102e;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3vw;
+    color: white;
+    font-size: 2.5vw;
+    shrink-0;
+  }
+  .contact-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .contact-label {
+    font-size: 2vw;
+    color: #94a3b8;
+  }
+  .contact-val {
+    font-size: 3vw;
+    font-weight: 600;
+    color: #1a2332;
+  }
+
+  .back-signature-section {
+    position: absolute;
+    bottom: 20vh;
+    width: 100vw;
+    text-align: center;
+    z-index: 5;
+  }
+  .signature-img {
+    height: 8vh;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .signature-line {
+    width: 40vw;
+    height: 1px;
+    background-color: #cbd5e1;
+    margin: 0.5vh auto;
+  }
+  .signature-label {
+    font-size: 2.5vw;
+    color: #64748b;
+  }
+
+  .back-bottom-logo-section {
+    position: absolute;
+    bottom: 5vh;
+    width: 100vw;
+    text-align: center;
+    z-index: 5;
+  }
+  .back-logo {
+    height: 6vh;
+    object-fit: contain;
+    margin: 0 auto;
+    display: block;
+  }
+  .back-school-name {
+    font-size: 3vw;
+    font-weight: 800;
+    color: #1a2332;
+    text-transform: uppercase;
+    margin-top: 0.5vh;
+  }
+
+  .back-bottom-shapes {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 4vh;
+    z-index: 1;
+  }
+  .back-bottom-red {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100vw; height: 3vh;
+    background: #c8102e;
+    clip-path: polygon(0 100%, 50% 0, 100% 100%);
+  }
+  .back-bottom-navy {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100vw; height: 2vh;
+    background: #1a2332;
+    clip-path: polygon(0 100%, 50% 0, 100% 100%);
+  }
+
+</style>
+
+{% if side == 'front' %}
+<div class="card-container">
+  <div class="front-top-shapes">
+    <div class="front-top-red-left"></div>
+    <div class="front-top-red-right"></div>
+    <div class="front-top-navy-left"></div>
+    <div class="front-top-navy-right"></div>
+  </div>
+
+  <div class="front-header">
+    {% if organization.showLogo and organization.logo %}
+      <img src="{{ organization.logo }}" class="front-logo" />
+    {% endif %}
+    <div class="front-school-name">{{ organization.name }}</div>
+    <div class="front-school-slogan">{{ organization.subtitle | default('SLOGAN HERE') }}</div>
+  </div>
+
+  <div class="front-photo-wrapper">
+    {% if photo %}
+      <img src="{{ photo }}" class="front-photo" />
+    {% endif %}
+  </div>
+
+  <div class="front-student-info">
+    <div class="front-student-name">{{ name }}</div>
+    <div class="front-student-title">Student</div>
+  </div>
+
+  <div class="front-bottom-red"></div>
+  <div class="front-bottom-navy">
+    <div class="front-details-grid">
+      <div class="detail-label">ID No</div>
+      <div class="detail-value">{{ idNo }}</div>
+
+      {% if className %}
+      <div class="detail-label">Class</div>
+      <div class="detail-value">{{ className }}</div>
+      {% endif %}
+
+      {% if dob %}
+      <div class="detail-label">Date of Birth</div>
+      <div class="detail-value">{{ dob }}</div>
+      {% endif %}
+
+      {% if bloodGroup %}
+      <div class="detail-label">Blood Group</div>
+      <div class="detail-value">{{ bloodGroup }}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card-container">
+  
+  <div class="back-top-red"></div>
+  <div class="back-top-navy">
+    <div class="back-terms-title">{{ organization.backTermsTitle | default('TERMS AND CONDITIONS') }}</div>
+    <ul class="back-terms-list">
+      {% for term in organization.terms %}
+        <li>{{ term }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="back-contact-section">
+    {% if organization.phone %}
+    <div class="contact-item">
+      <div class="contact-icon">✆</div>
+      <div class="contact-text">
+        <span class="contact-label">Your Phone Number</span>
+        <span class="contact-val">{{ organization.phone }}</span>
+      </div>
+    </div>
+    {% endif %}
+    
+    <!-- Email can be added if available in org, using placeholder for design accuracy -->
+    <div class="contact-item">
+      <div class="contact-icon">✉</div>
+      <div class="contact-text">
+        <span class="contact-label">Your Email Address</span>
+        <span class="contact-val">mail@example.com</span>
+      </div>
+    </div>
+
+    {% if organization.address %}
+    <div class="contact-item">
+      <div class="contact-icon">📍</div>
+      <div class="contact-text">
+        <span class="contact-label">Your City Address</span>
+        <span class="contact-val">{{ organization.address }}</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="back-signature-section">
+    {% if organization.showSignature and organization.signature %}
+      <img src="{{ organization.signature }}" class="signature-img" />
+    {% else %}
+      <div style="height: 6vh"></div>
+    {% endif %}
+    <div class="signature-line"></div>
+    <div class="signature-label">{{ organization.signatureLabel | default('Principal Signature') }}</div>
+  </div>
+
+  <div class="back-bottom-logo-section">
+    {% if organization.showLogo and organization.logo %}
+      <img src="{{ organization.logo }}" class="back-logo" />
+    {% endif %}
+    <div class="back-school-name">{{ organization.name }}</div>
+  </div>
+
+  <div class="back-bottom-shapes">
+    <div class="back-bottom-red"></div>
+    <div class="back-bottom-navy"></div>
+  </div>
+
+</div>
+{% endif %}

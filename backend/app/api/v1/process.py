@@ -256,3 +256,32 @@ async def get_country_standard(country_code: str):
 async def get_standards():
     """Alias to get all country standards."""
     return await get_countries()
+
+
+@router.get("/engine-status")
+async def get_engine_status():
+    """
+    Returns the live AI engine status:
+    - Cloud AI (RMBG-2.0 via Replicate / Bria / Custom) status
+    - Local Neural Fallback (IS-Net / u2net_human_seg) status
+    """
+    from app.core.config import settings
+    
+    token = getattr(settings, "replicate_api_token", "") or os.environ.get("REPLICATE_API_TOKEN", "")
+    rmbg_enabled = getattr(settings, "rmbg_enabled", True)
+    custom_endpoint = getattr(settings, "custom_rmbg_endpoint", "") or os.environ.get("RMBG_CUSTOM_ENDPOINT", "")
+    
+    has_cloud_config = bool(token or custom_endpoint) and rmbg_enabled
+    
+    return {
+        "success": True,
+        "data": {
+            "rmbg_enabled": rmbg_enabled,
+            "has_cloud_config": has_cloud_config,
+            "provider": getattr(settings, "rmbg_provider", "replicate"),
+            "cloud_engine": "RMBG-2.0 Ultra Cloud AI (Sub-Pixel Hair)",
+            "local_engine": "IS-Net High-Definition Engine (100% Offline)",
+            "mode": "hybrid_auto",
+            "offline_ready": True
+        }
+    }

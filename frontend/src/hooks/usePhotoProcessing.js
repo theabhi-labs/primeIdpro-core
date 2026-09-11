@@ -73,6 +73,10 @@ export default function usePhotoProcessing() {
                     transparentUrl: transparentUrl,
                     isVintageRestored: restoreVintage,
                 });
+
+                if (window.electronAPI?.analytics?.trackEvent) {
+                    window.electronAPI.analytics.trackEvent("AI_PROCESSED", { imageId, type: 'passport' }).catch(console.error);
+                }
             } catch (err) {
                 updateStatus(upload.id, {
                     status: 'failed',

@@ -94,6 +94,39 @@ const migrations = [
                 );
             `);
         }
+    },
+    {
+        version: 2,
+        name: "credit_ledger",
+        up: (db) => {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS credit_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    account_id TEXT NOT NULL,
+                    installation_id TEXT NOT NULL,
+                    server_confirmed_balance INTEGER NOT NULL DEFAULT 0,
+                    local_available_balance INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS credit_transactions (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
+                    installation_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    amount INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    reference_id TEXT,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    synced_at TEXT,
+                    metadata TEXT
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_credit_status ON credit_transactions(status);
+            `);
+        }
     }
 ];
 

@@ -3,7 +3,7 @@ import { X, RotateCw, Sparkles, CheckCircle2, ShieldCheck, QrCode, Maximize2, Zo
 import CardVisualPreview from './CardVisualPreview';
 
 export default function CardDetailModal({ template, isOpen, onClose, onSelectTemplate, initialSide = 'front' }) {
-  const isVertical = template?.size?.orientation === 'vertical' || template?.id === 'corporate-id-dark' || template?.id === 'mhrsa-inter-college-vertical';
+  const isVertical = template?.size?.orientation === 'vertical' || template?.id === 'corporate-id-dark' || template?.id === 'mhrsa-inter-college-vertical' || template?.id === 'prime-crimson-navy' || template?.id === 'prime-navy-amber';
   const defaultZoom = isVertical ? 1.12 : 1.40;
 
   const [currentSide, setCurrentSide] = useState(initialSide);
@@ -114,15 +114,7 @@ export default function CardDetailModal({ template, isOpen, onClose, onSelectTem
               </button>
             </div>
 
-            {/* Flip 3D Action Button */}
-            <button
-              type="button"
-              onClick={handleFlip}
-              className="px-4 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-bold text-xs rounded-xl border border-cyan-500/40 flex items-center gap-2 transition-all shadow-sm active:scale-95 cursor-pointer"
-            >
-              <RotateCw size={14} className="animate-spin-once" />
-              <span>3D Flip Card (Space / Click)</span>
-            </button>
+
 
             {/* Zoom Controls */}
             <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
@@ -146,6 +138,21 @@ export default function CardDetailModal({ template, isOpen, onClose, onSelectTem
             </div>
           </div>
 
+          <div className="w-full max-w-2xl bg-slate-900/80 rounded-2xl p-3 border border-slate-800 flex flex-wrap items-center justify-center gap-8 text-xs">
+            <div className="text-center">
+              <span className="text-slate-500 block text-[10px] uppercase font-bold">Physical Size</span>
+              <strong className="text-slate-200 font-mono">85.60 × 53.98 mm</strong>
+            </div>
+            <div className="text-center">
+              <span className="text-slate-500 block text-[10px] uppercase font-bold">Standard</span>
+              <strong className="text-cyan-400">CR80 PVC Card</strong>
+            </div>
+            <div className="text-center">
+              <span className="text-slate-500 block text-[10px] uppercase font-bold">Print Layout</span>
+              <strong className="text-slate-200">Duplex (Front+Back)</strong>
+            </div>
+          </div>
+
           {/* Large Card Display Frame with 3D Flip Perspective */}
           <div
             onClick={handleFlip}
@@ -165,35 +172,13 @@ export default function CardDetailModal({ template, isOpen, onClose, onSelectTem
                 side={currentSide}
                 scale={zoomLevel}
                 isInteractive={false}
+                isVertical={isVertical}
               />
             </div>
 
-            {/* Hover Tooltip Indicator */}
-            <div className="absolute bottom-2 px-3 py-1 rounded-full bg-slate-900/90 border border-slate-700 text-[11px] text-cyan-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 shadow-lg pointer-events-none">
-              <RotateCw size={12} />
-              <span>Click anywhere on card to Flip</span>
-            </div>
           </div>
 
-          {/* Specs & Physical Dimension Footer info */}
-          <div className="w-full max-w-2xl bg-slate-900/80 rounded-2xl p-4 border border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-            <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-bold">Physical Size</span>
-              <strong className="text-slate-200 font-mono">85.60 × 53.98 mm</strong>
-            </div>
-            <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-bold">Standard</span>
-              <strong className="text-cyan-400">CR80 PVC Card</strong>
-            </div>
-            <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-bold">Resolution</span>
-              <strong className="text-emerald-400">300 DPI Strict</strong>
-            </div>
-            <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-bold">Print Layout</span>
-              <strong className="text-slate-200">Duplex (Front+Back)</strong>
-            </div>
-          </div>
+
         </div>
 
         {/* Modal Bottom Footer */}

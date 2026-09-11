@@ -158,14 +158,14 @@ def process_card_photo(
     try:
         log_steps.append(f"Executing AI Pipeline for {record_name} (Cache Miss)")
         
-        # Step A: Background Removal (if enabled)
+        # Step A: Background Removal (if enabled) - STRICTLY Local at ₹0 cost for ID Cards
         temp_transparent = cached_transparent_path
         if profile.removeBg:
-            log_steps.append("Applying AI Background Removal (Lightweight RemBG model)...")
-            bg_removed = remove_background_lightweight(actual_path, temp_transparent)
+            log_steps.append("Applying Local AI Background Removal (100% Free / ₹0 API cost)...")
+            bg_removed = remove_background_lightweight(actual_path, temp_transparent, allow_cloud=False)
             if bg_removed and os.path.exists(temp_transparent):
                 img = Image.open(temp_transparent).convert("RGBA")
-                log_steps.append("Background removed successfully (Alpha channel isolated)")
+                log_steps.append("Background removed successfully via Local Engine")
             else:
                 img = Image.open(actual_path).convert("RGBA")
                 log_steps.append("Background removal bypassed / fallback to source image")

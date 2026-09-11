@@ -63,6 +63,33 @@ export default function Step5_ColumnMapping({ project, updateProject, onNext, on
   const hasId = isManual ? true : mappedValues.some(v => ['rollNumber', 'employeeId', 'memberId', 'registrationNumber'].includes(v));
 
 
+  const handleProceed = () => {
+    const rawRows = project.metadata?.importedRows || [];
+    const currentMappings = project.columnMappings || {};
+
+    if (rawRows.length > 0 && Object.keys(currentMappings).length > 0) {
+      const remappedRecords = (project.records || []).map((rec, idx) => {
+        const raw = rec.sourceData || rawRows[idx] || {};
+        const mappedFields = { ...raw };
+        Object.entries(currentMappings).forEach(([excelCol, targetField]) => {
+          if (targetField && targetField !== '_ignore_' && raw[excelCol] !== undefined) {
+            mappedFields[targetField] = raw[excelCol];
+          }
+        });
+        return {
+          ...rec,
+          fields: {
+            ...mappedFields,
+            name: mappedFields.name || mappedFields.studentName || raw.name || raw.Name || `Student ${idx + 1}`,
+            rollNumber: mappedFields.rollNumber || mappedFields.rollNo || mappedFields.id || raw.rollNumber || raw['Roll No'] || `${100 + idx + 1}`,
+          },
+        };
+      });
+      updateProject({ records: remappedRecords });
+    }
+    onNext();
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header Banner */}
@@ -222,7 +249,7 @@ export default function Step5_ColumnMapping({ project, updateProject, onNext, on
         <button
           type="button"
           disabled={!hasName}
-          onClick={onNext}
+          onClick={handleProceed}
           className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
         >
           Match Photos →

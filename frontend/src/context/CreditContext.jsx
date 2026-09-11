@@ -77,6 +77,11 @@ export function CreditProvider({ children }) {
       openConnectModal('Account Connection Required! Please connect your PrimeIDPro.online account to print or download.');
       return false;
     }
+    
+    if (tier === 'DEACTIVATED') {
+      openConnectModal('ACCOUNT DEACTIVATED. Your account has been suspended by the administrator. Please contact support.');
+      return false;
+    }
 
     const required = type === 'passport' ? rates.passportPhotoPrint * count : rates.idCardPrintPerUnit * count;
 
@@ -101,6 +106,11 @@ export function CreditProvider({ children }) {
       return false;
     }
 
+    if (tier === 'DEACTIVATED') {
+      openConnectModal('ACCOUNT DEACTIVATED. Your account has been suspended by the administrator. Please contact support.');
+      return false;
+    }
+
     const required = type === 'passport' ? rates.passportPhotoPrint * count : rates.idCardPrintPerUnit * count;
 
     if (credits < required) {
@@ -116,6 +126,9 @@ export function CreditProvider({ children }) {
       const res = await deductCreditsApi({ type, count, description });
       if (res?.success) {
         setCredits(res.remainingCredits);
+        if (window.electronAPI?.analytics?.trackEvent) {
+          window.electronAPI.analytics.trackEvent("PRINTED", { type, count, description }).catch(console.error);
+        }
         return true;
       }
       return false;

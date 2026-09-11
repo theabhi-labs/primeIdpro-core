@@ -109,19 +109,42 @@ export default function Step4_DataImport({ project, updateProject, onNext, onPre
         setImportResult(data);
         setSelectedSheet(data.sheets?.[0] || 'Sheet1');
 
+        const rows = (Array.isArray(data.allRows) && data.allRows.length > 0)
+          ? data.allRows
+          : (Array.isArray(data.sampleRows) ? data.sampleRows : []);
+
+        const constructedRecords = rows.map((r, idx) => {
+          const recId = `rec_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+          const embeddedPhoto = r._embedded_photo_path || null;
+          return {
+            id: recId,
+            fields: { ...r },
+            sourceData: r,
+            photo: embeddedPhoto
+              ? { source: 'embedded', originalPath: embeddedPhoto, matched: true, matchMethod: 'embedded' }
+              : { matched: false },
+            processedPhoto: embeddedPhoto
+              ? { status: 'completed', processedUrl: embeddedPhoto }
+              : { status: 'completed' },
+            validation: { status: 'valid', errors: [], warnings: [] },
+          };
+        });
+
         updateProject({
           dataSourceType: data.fileType === '.csv' ? 'csv' : 'excel',
           dataSourceName: data.fileName,
-          totalRecords: data.totalRows,
+          totalRecords: data.totalRows || constructedRecords.length,
+          records: constructedRecords,
           columnMappings: data.suggestedMappings || {},
           metadata: {
             ...project.metadata,
             tempFilePath: data.tempFilePath,
             detectedHeaders: data.detectedHeaders,
             embeddedImagesCount: data.embeddedImagesCount,
+            importedRows: rows,
           },
         });
-        setToast?.({ type: 'success', message: `Imported ${data.totalRows} records from ${data.fileName}` });
+        setToast?.({ type: 'success', message: `Imported ${data.totalRows || constructedRecords.length} records from ${data.fileName}` });
       }
     } catch (err) {
       console.error('Import error:', err);

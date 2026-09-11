@@ -1,3 +1,4 @@
+import uuid
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -34,20 +35,46 @@ class CardTemplateMeta(BaseModel):
     barcode: Optional[Dict[str, Any]] = None
     preview: Optional[str] = None
     templateHtml: Optional[str] = None
+    scalable: bool = False
 
 
 class OrganizationData(BaseModel):
-    name: str = ""
+    name: str = "Delhi Public School"
+    subtitle: Optional[str] = "Inter College"
     clientName: Optional[str] = ""
     address: Optional[str] = ""
     phone: Optional[str] = ""
     email: Optional[str] = ""
     website: Optional[str] = ""
+    session: Optional[str] = "2026-2027"
     logo: Optional[str] = None  # URL or base64
+    showLogo: bool = True
     signature: Optional[str] = None  # Principal / Authorized signature URL
-    session: Optional[str] = ""
+    showSignature: bool = True
+    signatureLabel: Optional[str] = "Principal"
+    estdText: Optional[str] = "ESTD. 2010"
+    showBarcode: bool = True
+    showQr: bool = True
     principalName: Optional[str] = ""
     code: Optional[str] = ""
+
+    # Dynamic Back Side Configuration
+    backTitle: Optional[str] = ""
+    backSubtitle: Optional[str] = ""
+    backAddress: Optional[str] = ""
+    backPhone: Optional[str] = ""
+    showWatermark: bool = True
+    watermarkText: Optional[str] = "ESTD. 2010"
+    showTerms: bool = True
+    backTermsTitle: Optional[str] = "TERMS & CONDITIONS"
+    terms: List[str] = Field(default_factory=lambda: [
+        "This card is non-transferable.",
+        "Loss of this card must be reported to the office immediately.",
+        "This card must be presented whenever required by authorities.",
+        "Cardholder is responsible for safe custody of this card."
+    ])
+    backFooterText: Optional[str] = "Emergency Contact : {phone}"
+    showBackFooter: bool = True
     customFields: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -105,20 +132,39 @@ class MappingProfile(BaseModel):
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
 
+class CardBatch(BaseModel):
+    id: str = Field(default_factory=lambda: f"batch_{uuid.uuid4().hex[:6]}")
+    batchNumber: int = 1
+    name: str = "Batch 1"
+    status: str = "COLLECTING"  # COLLECTING, LOCKED_FOR_PRINT, PRINTED
+    totalRecords: int = 0
+    records: List[CardRecord] = Field(default_factory=list)
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    lockedAt: Optional[datetime] = None
+
+
 class CardProject(BaseModel):
     id: str
     name: str
     client: Optional[str] = ""
     cardType: str = "school"
+    cardSize: TemplateSize = Field(default_factory=TemplateSize)
     organization: OrganizationData = Field(default_factory=OrganizationData)
     templateId: str = "school-modern-blue"
     templateVersion: str = "1.0.0"
+    themeColor: Optional[str] = "#2563eb"
+    customTemplateConfig: Optional[Dict[str, Any]] = None
     photoProcessingProfile: PhotoProcessingProfile = Field(default_factory=PhotoProcessingProfile)
-    dataSourceType: str = "excel"  # excel, csv, manual, paste
+    dataSourceType: str = "excel"  # excel, csv, manual, weblink
     dataSourceName: Optional[str] = None
     columnMappings: Dict[str, str] = Field(default_factory=dict)
+    fieldsConfig: List[Dict[str, Any]] = Field(default_factory=list)
+    requiredFields: List[str] = Field(default_factory=lambda: ["name", "rollNumber", "className", "fatherName", "motherName", "address", "dob", "bloodGroup", "phone"])
+    publicShareToken: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    currentBatchId: str = "batch_1"
+    batches: List[CardBatch] = Field(default_factory=list)
     records: List[CardRecord] = Field(default_factory=list)
-    status: str = "DRAFT"  # DRAFT, IMPORTING, DATA_READY, VALIDATION_REQUIRED, PROCESSING_PHOTOS, PHOTOS_READY, GENERATED, PRINTED
+    status: str = "DRAFT"  # DRAFT, IMPORTING, DATA_READY, COLLECTING, LOCKED_FOR_PRINT, PHOTOS_READY, GENERATED, PRINTED
     totalRecords: int = 0
     photosMatched: int = 0
     photosProcessed: int = 0
@@ -138,6 +184,7 @@ class ImportFileResponse(BaseModel):
     detectedHeaders: List[str]
     totalRows: int
     sampleRows: List[Dict[str, Any]]
+    allRows: Optional[List[Dict[str, Any]]] = None
     suggestedMappings: Dict[str, str]
     embeddedImagesCount: int = 0
     tempFilePath: str

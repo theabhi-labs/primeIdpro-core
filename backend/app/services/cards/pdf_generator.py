@@ -1,14 +1,16 @@
 import os
 import uuid
 import math
-import io
+import shutil
+import tempfile
+import subprocess
 import logging
-from typing import List, Dict, Any, Optional
-from PIL import Image, ImageDraw, ImageFont
-import qrcode
-from app.core.config import PROCESSED_DIR, APP_DIR
-from app.models.card_studio import CardProject, CardRecord, GenerateBatchRequest
-from app.utils.color import get_bg_rgb
+from typing import List, Dict, Any, Optional, Tuple
+import jinja2
+from PIL import Image, ImageDraw
+from app.core.config import PROCESSED_DIR
+from app.models.card_studio import CardProject, CardRecord, GenerateBatchRequest, OrganizationData
+from app.services.cards.template_engine import render_card_html, get_template_by_id, list_card_templates
 
 logger = logging.getLogger("primeidpro.cards.pdf")
 
@@ -16,156 +18,258 @@ OUTPUT_DIR = os.path.join(PROCESSED_DIR, "card_outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
+def _find_browser_executable() -> Optional[str]:
+    """
+    Locates Google Chrome or Microsoft Edge on Windows/Linux.
+    """
+    candidates = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        shutil.which("chrome"),
+        shutil.which("msedge"),
+        shutil.which("google-chrome"),
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+    ]
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    return None
 
-def draw_card_bitmap(
+
+def get_template_dimensions_300dpi(template_id: str) -> Tuple[int, int, bool]:
+    """
+    Returns (pixel_width, pixel_height, is_vertical) at exact 300 DPI for CR80 standard:
+    - Vertical: 53.98mm x 85.60mm -> 638 x 1011 px (CSS: 204 x 324 px)
+    - Horizontal: 85.60mm x 53.98mm -> 1011 x 638 px (CSS: 324 x 204 px)
+    """
+    template_info = get_template_by_id(template_id)
+    is_vertical = False
+    if template_info:
+        meta, _ = template_info
+        if meta.size:
+            if meta.size.orientation == "vertical" or (meta.size.height > meta.size.width):
+                is_vertical = True
+    elif "vertical" in (template_id or "").lower():
+        is_vertical = True
+
+    if is_vertical:
+        return 638, 1011, True
+    else:
+        return 1011, 638, False
+
+
+def _extract_template_parts(template_id: str) -> Tuple[str, jinja2.Template]:
+    """Extracts CSS and Jinja2 body template from a template package."""
+    template_info = get_template_by_id(template_id)
+    if not template_info:
+        all_t = list_card_templates()
+        if all_t:
+            template_info = get_template_by_id(all_t[0].id)
+
+    raw_html = template_info[1] if template_info else ""
+    css_content = ""
+    if "<style>" in raw_html and "</style>" in raw_html:
+        css_content = raw_html.split("<style>")[1].split("</style>")[0]
+
+    body_template_str = raw_html
+    if "<body>" in raw_html and "</body>" in raw_html:
+        body_template_str = raw_html.split("<body>")[1].split("</body>")[0]
+    elif '<div class="card-container">' in raw_html:
+        body_template_str = raw_html[raw_html.find('<div class="card-container">'):]
+
+    jinja_tpl = jinja2.Template(body_template_str)
+    return css_content, jinja_tpl
+
+
+def _resolve_image_to_data_uri_or_file(img_path_or_url: Optional[str]) -> str:
+    """Converts relative URLs and local file paths to base64 Data URIs so headless browser renders images flawlessly."""
+    if not img_path_or_url:
+        return ""
+    if img_path_or_url.startswith("data:"):
+        return img_path_or_url
+
+    from app.core.config import PROCESSED_DIR, UPLOAD_DIR, APP_DIR
+    local_path = None
+    if img_path_or_url.startswith("/processed/"):
+        rel = img_path_or_url[len("/processed/"):]
+        candidate = os.path.join(PROCESSED_DIR, rel)
+        if os.path.exists(candidate):
+            local_path = candidate
+    elif img_path_or_url.startswith("/uploads/"):
+        rel = img_path_or_url[len("/uploads/"):]
+        candidate = os.path.join(UPLOAD_DIR, rel)
+        if os.path.exists(candidate):
+            local_path = candidate
+    elif os.path.isabs(img_path_or_url) and os.path.exists(img_path_or_url):
+        local_path = img_path_or_url
+    else:
+        for base in [PROCESSED_DIR, UPLOAD_DIR, APP_DIR, os.getcwd()]:
+            cand = os.path.join(base, img_path_or_url.lstrip("/\\"))
+            if os.path.exists(cand):
+                local_path = cand
+                break
+
+    if local_path and os.path.exists(local_path):
+        try:
+            import base64
+            with open(local_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+            ext = os.path.splitext(local_path)[1].lower().replace(".", "")
+            mime = "image/png" if ext == "png" else ("image/svg+xml" if ext == "svg" else "image/jpeg")
+            return f"data:{mime};base64,{encoded}"
+        except Exception:
+            return f"file:///{local_path.replace(os.sep, '/')}"
+
+    return img_path_or_url
+
+
+def _build_record_context(record: CardRecord, org: OrganizationData, side: str = "front") -> Dict[str, Any]:
+    """Builds template context for a single card side with resolved image data URIs."""
+    org_data = org.model_dump()
+    if org_data.get("logo"):
+        org_data["logo"] = _resolve_image_to_data_uri_or_file(org_data["logo"])
+    if org_data.get("signature"):
+        org_data["signature"] = _resolve_image_to_data_uri_or_file(org_data["signature"])
+
+    ctx = {
+        "organization": org_data,
+        "side": side,
+    }
+    for k, v in record.fields.items():
+        ctx[k] = v
+
+    # Fallbacks & Aliases
+    if "phone" in ctx and "mobile" not in ctx:
+        ctx["mobile"] = ctx["phone"]
+    if "mobile" in ctx and "phone" not in ctx:
+        ctx["phone"] = ctx["mobile"]
+    if "className" in ctx and "class" not in ctx:
+        ctx["class"] = ctx["className"]
+    if "class" in ctx and "className" not in ctx:
+        ctx["className"] = ctx["class"]
+    if "rollNumber" in ctx and "rollNo" not in ctx:
+        ctx["rollNo"] = ctx["rollNumber"]
+    if "rollNo" in ctx and "rollNumber" not in ctx:
+        ctx["rollNumber"] = ctx["rollNo"]
+
+    photo_val = (
+        record.fields.get("photo")
+        or (getattr(record, "processedPhoto", None) and getattr(record.processedPhoto, "processedUrl", None))
+        or (getattr(record, "photo", None) and getattr(record.photo, "originalPath", None))
+        or ""
+    )
+    ctx["photo"] = _resolve_image_to_data_uri_or_file(photo_val)
+    return ctx
+
+
+def render_card_bitmap(
+    template_id: str,
     record: CardRecord,
-    project: CardProject,
+    organization: OrganizationData,
     side: str = "front",
     dpi: int = 300
 ) -> Image.Image:
     """
-    Renders a single high-precision 300 DPI bitmap of a card.
-    CR80 Standard: 85.60mm x 53.98mm = 1011 x 638 pixels at 300 DPI.
+    Renders a single 300 DPI bitmap of a card from its HTML template.
     """
-    # CR80 Dimensions in pixels at 300 DPI
-    card_w = int(round(85.60 / 25.4 * dpi))  # 1011 px
-    card_h = int(round(53.98 / 25.4 * dpi))  # 638 px
+    pixel_w, pixel_h, is_vertical = get_template_dimensions_300dpi(template_id)
+    css_w = 204 if is_vertical else 324
+    css_h = 324 if is_vertical else 204
 
-    # Base Canvas
-    card = Image.new("RGB", (card_w, card_h), (255, 255, 255))
-    draw = ImageDraw.Draw(card)
+    html_content = render_card_html(
+        template_id=template_id,
+        record=record,
+        organization=organization,
+        side=side
+    )
 
-    org = project.organization
-    fields = record.fields
-
-    # Colors
-    header_color = (30, 64, 175)    # Blue
-    text_dark = (15, 23, 42)        # Slate 900
-    text_muted = (100, 116, 139)    # Slate 500
-    accent_blue = (2, 132, 199)     # Sky 600
-
-    if side == "back":
-        # ---------------- BACK OF CARD ----------------
-        # Header strip
-        draw.rectangle([(0, 0), (card_w, 60)], fill=(241, 245, 249))
-        draw.text((30, 18), str(org.name or "IDENTITY CARD").upper(), fill=header_color)
-        draw.text((card_w - 240, 18), f"SESSION: {org.session or '2026-27'}", fill=text_muted)
-        draw.line([(0, 60), (card_w, 60)], fill=(203, 213, 225), width=2)
-
-        # Back details list
-        y_pos = 90
-        back_labels = [
-            ("Father's Name", fields.get("fatherName")),
-            ("Date of Birth", fields.get("dob")),
-            ("Blood Group", fields.get("bloodGroup")),
-            ("Emergency Phone", fields.get("mobile")),
-            ("Address", fields.get("address")),
-        ]
-        for label, val in back_labels:
-            if val:
-                draw.text((40, y_pos), f"{label}:", fill=text_muted)
-                draw.text((220, y_pos), str(val), fill=text_dark)
-                y_pos += 38
-
-        # QR Code on back right
-        qr_data = fields.get("rollNumber") or fields.get("employeeId") or record.id
-        qr = qrcode.QRCode(box_size=6, border=1)
-        qr.add_data(str(qr_data))
-        qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        qr_img = qr_img.resize((180, 180), Image.Resampling.LANCZOS)
-        card.paste(qr_img, (card_w - 230, 100))
-        draw.text((card_w - 210, 290), f"ID: {qr_data}", fill=accent_blue)
-
-        # Footer Terms & Authority Signature
-        draw.line([(30, card_h - 110), (card_w - 30, card_h - 110)], fill=(226, 232, 240), width=2)
-        draw.text((40, card_h - 90), "• Property of institution. Return if found.", fill=text_muted)
-        draw.text((40, card_h - 60), f"• Helpdesk: {org.phone or 'Office Campus'}", fill=text_muted)
-        draw.text((card_w - 220, card_h - 50), "Authorized Signatory", fill=text_dark)
-
+    print_override_css = f"""
+    <style id="print-reset-style">
+      @page {{ margin: 0; size: {css_w}px {css_h}px; }}
+      html, body {{
+        margin: 0 !important;
+        padding: 0 !important;
+        width: {css_w}px !important;
+        height: {css_h}px !important;
+        display: block !important;
+        overflow: hidden !important;
+        background: #ffffff !important;
+      }}
+      .card-container {{
+        margin: 0 !important;
+        padding: 0 !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: {css_w}px !important;
+        height: {css_h}px !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }}
+    </style>
+    """
+    if "</head>" in html_content:
+        html_content = html_content.replace("</head>", print_override_css + "</head>")
     else:
-        # ---------------- FRONT OF CARD ----------------
-        # 1. Header Banner
-        draw.rectangle([(0, 0), (card_w, 130)], fill=header_color)
+        html_content = print_override_css + html_content
 
-        # Org Logo (if present)
-        if org.logo and os.path.exists(org.logo):
+    browser_exe = _find_browser_executable()
+    if browser_exe:
+        temp_dir = tempfile.mkdtemp(prefix="single_card_")
+        temp_html = os.path.join(temp_dir, "card.html")
+        temp_png = os.path.join(temp_dir, "card.png")
+        try:
+            with open(temp_html, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
+            cmd = [
+                browser_exe,
+                "--headless=new",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-sync",
+                "--disable-translate",
+                "--disable-extensions",
+                "--disable-default-apps",
+                "--hide-scrollbars",
+                "--mute-audio",
+                f"--user-data-dir={temp_dir}",
+                "--force-device-scale-factor=3.125",
+                f"--window-size={css_w},{css_h}",
+                f"--screenshot={temp_png}",
+                temp_html,
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+            if os.path.exists(temp_png):
+                card_img = Image.open(temp_png).convert("RGB")
+                if card_img.size != (pixel_w, pixel_h):
+                    card_img = card_img.resize((pixel_w, pixel_h), Image.Resampling.LANCZOS)
+                return card_img
+        except Exception as err:
+            logger.warning(f"Browser single card render failed: {err}")
+        finally:
             try:
-                logo_img = Image.open(org.logo).convert("RGBA")
-                logo_img.thumbnail((90, 90), Image.Resampling.LANCZOS)
-                card.paste(logo_img, (30, 20), mask=logo_img)
+                shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception:
                 pass
 
-        org_name_text = (org.name or "ACME PUBLIC SCHOOL").upper()
-        draw.text((140, 25), org_name_text, fill=(255, 255, 255))
-        draw.text((140, 70), org.address or "Affiliated to State Board • Estd. 2005", fill=(186, 230, 253))
-
-        # 2. Student / Person Photo
-        photo_box_x = 45
-        photo_box_y = 160
-        photo_box_w = 260
-        photo_box_h = 330
-
-        # Draw frame
-        draw.rectangle(
-            [(photo_box_x - 3, photo_box_y - 3), (photo_box_x + photo_box_w + 3, photo_box_y + photo_box_h + 3)],
-            fill=(255, 255, 255),
-            outline=accent_blue,
-            width=3
-        )
-
-        photo_placed = False
-        p_url = None
-        if record.processedPhoto and record.processedPhoto.processedUrl:
-            p_url = record.processedPhoto.processedUrl
-        elif record.photo and record.photo.originalPath:
-            p_url = record.photo.originalPath
-
-        if p_url:
-            from app.services.sheet.pdf_exporter import _load_photo_image
-            p_img = _load_photo_image(p_url)
-            if p_img:
-                try:
-                    p_rgb = p_img.convert("RGB").resize((photo_box_w, photo_box_h), Image.Resampling.LANCZOS)
-                    card.paste(p_rgb, (photo_box_x, photo_box_y))
-                    photo_placed = True
-                except Exception as e:
-                    logger.warning(f"Failed pasting photo {p_url}: {e}")
-
-        if not photo_placed:
-            draw.rectangle([(photo_box_x, photo_box_y), (photo_box_x + photo_box_w, photo_box_y + photo_box_h)], fill=(241, 245, 249))
-            draw.text((photo_box_x + 80, photo_box_y + 140), "PHOTO", fill=text_muted)
-
-        # 3. Details Column
-        name_val = str(fields.get("name", "STUDENT NAME")).upper()
-        draw.text((340, 160), name_val, fill=text_dark)
-        draw.line([(340, 205), (card_w - 40, 205)], fill=accent_blue, width=3)
-
-        det_y = 225
-        sec_str = f"({fields.get('section')})" if fields.get("section") else ""
-        class_sec = f"{fields.get('class', '')} {sec_str}".strip()
-        detail_pairs = [
-            ("Roll No", fields.get("rollNumber") or fields.get("employeeId") or fields.get("memberId")),
-            ("Class / Sec", class_sec),
-            ("Adm No", fields.get("admissionNo") or fields.get("registrationNumber")),
-            ("Blood Grp", fields.get("bloodGroup")),
-        ]
-
-        for lbl, val in detail_pairs:
-            if val:
-                draw.text((340, det_y), f"{lbl}:", fill=text_muted)
-                draw.text((490, det_y), str(val), fill=text_dark)
-                det_y += 42
-
-        # 4. Front Footer Strip
-        draw.rectangle([(0, card_h - 55), (card_w, card_h)], fill=(15, 23, 42))
-        draw.text((40, card_h - 40), f"{project.cardType.upper()} IDENTITY CARD", fill=(255, 255, 255))
-        draw.text((card_w - 260, card_h - 40), f"SESSION: {org.session or '2026-27'}", fill=(186, 230, 253))
-
-    # Outer border
-    draw.rectangle([(0, 0), (card_w - 1, card_h - 1)], outline=(203, 213, 225), width=2)
+    # Fallback Canvas
+    card = Image.new("RGB", (pixel_w, pixel_h), (255, 255, 255))
+    draw = ImageDraw.Draw(card)
+    draw.rectangle([(0, 0), (pixel_w, 80)], fill=(30, 64, 175))
+    draw.text((20, 30), str(organization.name or "IDENTITY CARD").upper(), fill=(255, 255, 255))
+    draw.text((20, 120), f"Name: {record.fields.get('name', 'Student')}", fill=(15, 23, 42))
     return card
+
+
+draw_card_bitmap = render_card_bitmap
 
 
 def generate_card_batch_pdf(
@@ -173,12 +277,9 @@ def generate_card_batch_pdf(
     req: GenerateBatchRequest
 ) -> str:
     """
-    Generates a print-ready 300 DPI PDF for all records in a CardProject.
-    Supports:
-    - 'pvc': Individual CR80 card pages (1011 x 638 px / page)
-    - 'a4_pdf': Multiple cards packed on standard A4 (210 x 297 mm) sheets with cut marks.
+    Generates an ultra-fast, print-ready 300 DPI vector PDF for all records in a CardProject.
+    Uses single-shot headless browser compilation for instant batch processing.
     """
-    dpi = 300
     records_to_process = project.records
     if req.recordIds:
         id_set = set(req.recordIds)
@@ -187,81 +288,383 @@ def generate_card_batch_pdf(
     if not records_to_process:
         raise ValueError("No records found to generate cards.")
 
+    template_id = project.templateId or "school-modern-blue"
+    org = project.organization
+    
+    is_vertical = False
+    if project.cardSize and project.cardSize.orientation == "vertical":
+        is_vertical = True
+    elif project.cardSize and project.cardSize.orientation == "horizontal":
+        is_vertical = False
+    else:
+        _, _, is_vertical = get_template_dimensions_300dpi(template_id)
+
     output_filename = f"Cards_{project.name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}.pdf"
     output_pdf_path = os.path.join(OUTPUT_DIR, output_filename)
 
-    if req.outputFormat == "pvc":
-        # CR80 Individual Pages PDF (Front followed by Back)
-        pdf_pages = []
+    browser_exe = _find_browser_executable()
+    css_content, jinja_tpl = _extract_template_parts(template_id)
+
+    # ================= 1. DIRECT PVC (CR80 SINGLE CARD PER PAGE) =================
+    if req.outputFormat in ("pvc", "cr80_single"):
+        page_w = "53.98mm" if is_vertical else "85.60mm"
+        page_h = "85.60mm" if is_vertical else "53.98mm"
+
+        pvc_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  {css_content}
+
+  @page {{
+    size: {page_w} {page_h};
+    margin: 0;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  html, body {{
+    margin: 0 !important;
+    padding: 0 !important;
+    width: {page_w} !important;
+    height: auto !important;
+    background: #ffffff !important;
+    font-family: 'Segoe UI', Arial, sans-serif !important;
+    display: block !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }}
+  .pvc-page {{
+    width: {page_w} !important;
+    height: {page_h} !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    position: relative !important;
+    overflow: hidden !important;
+    display: block !important;
+  }}
+  .pvc-page:last-child {{
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }}
+  .pvc-page .card-container {{
+    width: {page_w} !important;
+    height: {page_h} !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+  }}
+</style>
+</head>
+<body>
+"""
         for rec in records_to_process:
-            front_img = draw_card_bitmap(rec, project, side="front", dpi=dpi)
-            pdf_pages.append(front_img)
+            ctx_f = _build_record_context(rec, org, side="front")
+            rendered_f = jinja_tpl.render(**ctx_f)
+            pvc_html += f'<div class="pvc-page">{rendered_f}</div>\n'
             if req.duplex:
-                back_img = draw_card_bitmap(rec, project, side="back", dpi=dpi)
-                pdf_pages.append(back_img)
+                ctx_b = _build_record_context(rec, org, side="back")
+                rendered_b = jinja_tpl.render(**ctx_b)
+                pvc_html += f'<div class="pvc-page">{rendered_b}</div>\n'
 
-        if pdf_pages:
-            first_page = pdf_pages[0]
-            first_page.save(
-                output_pdf_path,
-                "PDF",
-                resolution=float(dpi),
-                save_all=True,
-                append_images=pdf_pages[1:] if len(pdf_pages) > 1 else []
-            )
+        pvc_html += "</body></html>"
+        return _compile_html_to_pdf(pvc_html, output_pdf_path, browser_exe)
 
-    else:
-        # A4 Multi-Card Sheet Layout (210mm x 297mm @ 300 DPI)
-        a4_w = int(round(210.0 / 25.4 * dpi))  # 2480 px
-        a4_h = int(round(297.0 / 25.4 * dpi))  # 3508 px
-
-        card_w = int(round(85.60 / 25.4 * dpi))  # 1011 px
-        card_h = int(round(53.98 / 25.4 * dpi))  # 638 px
-
-        cols = 2
-        rows = 5
-        margin_x = int(round(12.0 / 25.4 * dpi))
-        margin_y = int(round(12.0 / 25.4 * dpi))
-        gap_x = int(round(4.0 / 25.4 * dpi))
-        gap_y = int(round(4.0 / 25.4 * dpi))
-
-        cards_per_sheet = cols * rows  # 10 cards per A4 page
-
-        sheet_pages = []
+    # ================= 2. A4 SHEET - 5 CARDS FOLDING (POUCH LAMINATION) =================
+    if req.rows == 5 or req.duplex or "folding" in str(req.outputFormat).lower():
+        cards_per_sheet = 5
         num_sheets = math.ceil(len(records_to_process) / cards_per_sheet)
 
-        for sheet_idx in range(num_sheets):
-            sheet = Image.new("RGB", (a4_w, a4_h), (255, 255, 255))
-            draw = ImageDraw.Draw(sheet)
+        # Transformation for vertical vs horizontal cards in standard 85.6mm x 54mm slot
+        slot_transform_css = """
+  .card-slot .card-container {
+    width: 53.98mm !important;
+    height: 85.60mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    position: absolute !important;
+    transform-origin: center center !important;
+  }
+  .slot-front .card-container {
+    transform: rotate(90deg) !important;
+  }
+  .slot-back .card-container {
+    transform: rotate(270deg) !important;
+  }
+""" if is_vertical else """
+  .card-slot .card-container {
+    width: 85.60mm !important;
+    height: 53.98mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+  }
+"""
 
+        a4_folding_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  {css_content}
+
+  @page {{
+    size: 210mm 297mm;
+    margin: 0;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  html, body {{
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: auto !important;
+    background: #ffffff !important;
+    font-family: 'Segoe UI', Arial, sans-serif !important;
+    display: block !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }}
+  .a4-sheet {{
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    position: relative !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    padding: 13.5mm 19.4mm !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    overflow: hidden !important;
+  }}
+  .a4-sheet:last-child {{
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }}
+  .card-row {{
+    width: 171.2mm;
+    height: 54.0mm;
+    display: flex;
+    position: relative;
+    border: {"0.5px solid #cbd5e1" if req.cutMarks else "none"};
+    margin-bottom: 0;
+  }}
+  .fold-line {{
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 85.6mm;
+    width: 1px;
+    border-left: 1px dashed #94a3b8;
+    z-index: 100;
+  }}
+  .card-slot {{
+    width: 85.6mm;
+    height: 54.0mm;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }}
+  {slot_transform_css}
+</style>
+</head>
+<body>
+"""
+        for sheet_idx in range(num_sheets):
+            a4_folding_html += '<div class="a4-sheet">\n'
             start_i = sheet_idx * cards_per_sheet
             end_i = min(start_i + cards_per_sheet, len(records_to_process))
 
-            for idx in range(start_i, end_i):
-                slot = idx - start_i
-                col = slot % cols
-                row = slot // cols
+            for rec_idx in range(start_i, end_i):
+                rec = records_to_process[rec_idx]
+                ctx_f = _build_record_context(rec, org, side="front")
+                ctx_b = _build_record_context(rec, org, side="back")
+                rendered_f = jinja_tpl.render(**ctx_f)
+                rendered_b = jinja_tpl.render(**ctx_b)
 
-                x = margin_x + col * (card_w + gap_x)
-                y = margin_y + row * (card_h + gap_y)
+                a4_folding_html += f"""
+    <div class="card-row">
+      <div class="fold-line"></div>
+      <div class="card-slot slot-front">
+        {rendered_f}
+      </div>
+      <div class="card-slot slot-back">
+        {rendered_b}
+      </div>
+    </div>
+"""
+            a4_folding_html += '</div>\n'
 
-                rec = records_to_process[idx]
-                card_img = draw_card_bitmap(rec, project, side="front", dpi=dpi)
-                sheet.paste(card_img, (x, y))
+        a4_folding_html += "</body></html>"
+        return _compile_html_to_pdf(a4_folding_html, output_pdf_path, browser_exe)
 
-                # Draw optional cut marks
-                if req.cutMarks:
-                    draw.rectangle([(x - 2, y - 2), (x + card_w + 2, y + card_h + 2)], outline=(200, 200, 200), width=1)
+    # ================= 3. A4 MULTI-UP GRID (SINGLE-SIDED GRID) =================
+    # For Vertical (Portrait: 54x85.6mm) cards: 3 cols x 3 rows = 9 cards per page (fits 297mm height cleanly)
+    # For Horizontal (Landscape: 85.6x54mm) cards: 2 cols x 5 rows = 10 cards per page (fits 297mm height cleanly)
+    if is_vertical:
+        cols = 3
+        rows = 3
+        gap_x = "5mm"
+        gap_y = "5mm"
+        pad_top_bottom = "14mm"
+        pad_left_right = "17mm"
+    else:
+        cols = 2
+        rows = 5
+        gap_x = "6mm"
+        gap_y = "3.5mm"
+        pad_top_bottom = "8mm"
+        pad_left_right = "16mm"
 
-            sheet_pages.append(sheet)
+    cards_per_sheet = cols * rows
+    num_sheets = math.ceil(len(records_to_process) / cards_per_sheet)
 
-        if sheet_pages:
-            sheet_pages[0].save(
-                output_pdf_path,
-                "PDF",
-                resolution=float(dpi),
-                save_all=True,
-                append_images=sheet_pages[1:] if len(sheet_pages) > 1 else []
-            )
+    grid_card_w = "53.98mm" if is_vertical else "85.60mm"
+    grid_card_h = "85.60mm" if is_vertical else "53.98mm"
 
-    return output_pdf_path
+    a4_grid_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  {css_content}
+
+  @page {{
+    size: 210mm 297mm;
+    margin: 0;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  html, body {{
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: auto !important;
+    background: #ffffff !important;
+    font-family: 'Segoe UI', Arial, sans-serif !important;
+    display: block !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }}
+  .a4-grid-sheet {{
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    position: relative !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    display: grid !important;
+    grid-template-columns: repeat({cols}, {grid_card_w}) !important;
+    grid-template-rows: repeat({rows}, {grid_card_h}) !important;
+    column-gap: {gap_x} !important;
+    row-gap: {gap_y} !important;
+    padding: {pad_top_bottom} {pad_left_right} !important;
+    justify-content: center !important;
+    align-content: center !important;
+    overflow: hidden !important;
+  }}
+  .a4-grid-sheet:last-child {{
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }}
+  .grid-card-wrapper {{
+    width: {grid_card_w} !important;
+    height: {grid_card_h} !important;
+    position: relative !important;
+    overflow: hidden !important;
+    border: {"0.5px solid #cbd5e1" if req.cutMarks else "none"} !important;
+  }}
+  .grid-card-wrapper .card-container {{
+    width: {grid_card_w} !important;
+    height: {grid_card_h} !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }}
+</style>
+</head>
+<body>
+"""
+    for sheet_idx in range(num_sheets):
+        a4_grid_html += '<div class="a4-grid-sheet">\n'
+        start_i = sheet_idx * cards_per_sheet
+        end_i = min(start_i + cards_per_sheet, len(records_to_process))
+
+        for rec_idx in range(start_i, end_i):
+            rec = records_to_process[rec_idx]
+            ctx_f = _build_record_context(rec, org, side="front")
+            rendered_f = jinja_tpl.render(**ctx_f)
+            a4_grid_html += f'<div class="grid-card-wrapper">{rendered_f}</div>\n'
+
+        a4_grid_html += '</div>\n'
+
+    a4_grid_html += "</body></html>"
+    return _compile_html_to_pdf(a4_grid_html, output_pdf_path, browser_exe)
+
+
+def _compile_html_to_pdf(html_content: str, output_pdf_path: str, browser_exe: Optional[str]) -> str:
+    """Compiles complete HTML document to native vector PDF using headless browser in 1 single pass."""
+    if not browser_exe:
+        raise RuntimeError("No headless browser (Chrome/Edge) available to compile print PDF.")
+
+    temp_dir = tempfile.mkdtemp(prefix="card_batch_pdf_")
+    temp_html = os.path.join(temp_dir, "batch_print.html")
+    temp_pdf = os.path.join(temp_dir, "batch_print.pdf")
+
+    try:
+        with open(temp_html, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        cmd = [
+            browser_exe,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-sync",
+            "--disable-translate",
+            "--disable-extensions",
+            "--disable-default-apps",
+            "--hide-scrollbars",
+            "--mute-audio",
+            f"--user-data-dir={temp_dir}",
+            "--no-pdf-header-footer",
+            f"--print-to-pdf={temp_pdf}",
+            temp_html,
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+
+        if os.path.exists(temp_pdf):
+            shutil.copy2(temp_pdf, output_pdf_path)
+            return output_pdf_path
+        else:
+            raise RuntimeError("PDF file was not created by browser compiler.")
+    finally:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
