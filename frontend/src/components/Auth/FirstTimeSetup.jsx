@@ -117,9 +117,17 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-800 text-center">
-          <p className="text-xs text-slate-500 flex items-center justify-center gap-1.5">
-            <Server size={14} />
-            Target API: <span className="font-mono text-slate-400">{getApiBaseUrl()}</span>
+          <p className="text-sm text-slate-400">
+            Don't have an account? <br />
+            Create one at{' '}
+            <a 
+              href="https://primeidpro.online" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-blue-500 hover:text-blue-400 font-medium underline underline-offset-2"
+            >
+              primeidpro.online
+            </a>
           </p>
         </div>
       </div>

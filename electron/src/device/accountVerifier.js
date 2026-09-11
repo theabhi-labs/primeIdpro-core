@@ -29,7 +29,7 @@ class AccountVerifier {
       const state = db.prepare('SELECT account_id, installation_id FROM credit_state WHERE id = 1').get();
       if (!state) return;
 
-      const result = await apiClient.get('/account/status');
+      const result = await apiClient.get('/app/account/status');
       
       if (result.success && result.data) {
         const { status, balance } = result.data;

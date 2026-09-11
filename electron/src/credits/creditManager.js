@@ -58,30 +58,30 @@ class CreditManager {
     if (state.local_available_balance < amount) throw new Error('INSUFFICIENT_CREDITS');
 
     const txId = crypto.randomUUID();
-    const idempotencyKey = \`\${state.installation_id}_\${referenceId}_\${txId}\`;
+    const idempotencyKey = `${state.installation_id}_${referenceId}_${txId}`;
     const now = new Date().toISOString();
 
     const applyTx = db.transaction(() => {
       // 1. Insert Transaction
-      db.prepare(\`
+      db.prepare(`
         INSERT INTO credit_transactions (
           id, account_id, installation_id, type, amount, reason, reference_id, idempotency_key, status, created_at
         ) VALUES (?, ?, ?, 'DEBIT', ?, ?, ?, ?, 'PENDING', ?)
-      \`).run(txId, state.account_id, state.installation_id, amount, reason, referenceId, idempotencyKey, now);
+      `).run(txId, state.account_id, state.installation_id, amount, reason, referenceId, idempotencyKey, now);
 
       // 2. Update local_available_balance
-      db.prepare(\`
+      db.prepare(`
         UPDATE credit_state 
         SET local_available_balance = local_available_balance - ?, updated_at = ?
         WHERE id = 1
-      \`).run(amount, now);
+      `).run(amount, now);
 
       // 3. Enqueue to Sync Queue
-      db.prepare(\`
+      db.prepare(`
         INSERT INTO sync_queue (
             id, event_type, idempotency_key, payload, status, retry_count, created_at, updated_at
         ) VALUES (?, 'CREDIT_TRANSACTION', ?, ?, 'PENDING', 0, ?, ?)
-      \`).run(crypto.randomUUID(), idempotencyKey, JSON.stringify({ transactionId: txId }), now, now);
+      `).run(crypto.randomUUID(), idempotencyKey, JSON.stringify({ transactionId: txId }), now, now);
     });
 
     try {
