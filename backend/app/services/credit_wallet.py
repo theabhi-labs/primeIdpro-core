@@ -206,8 +206,32 @@ def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
                             wallet_balance=wallet["credits"]
                         )
                     logger.debug(f"🔄 Synced wallet balance: {wallet['credits']} tokens (Cloud: {cloud_bal}, Unsettled: {unsettled})")
+            else:
+                # If success is false, check if device was deleted or forced logged out
+                action = parsed.get("action")
+                msg = str(parsed.get("message", "")).lower()
+                if action == "FORCE_LOGOUT" or "not found" in msg or "inactive" in msg or "deleted" in msg or "invalid" in msg:
+                    logger.warning("Device was rejected or deleted by central server. Auto-disconnecting...")
+                    wallet["isConnected"] = False
+                    wallet["connectedAccount"] = None
+                    wallet["licenseKey"] = None
+                    wallet["deviceToken"] = None
+                    wallet["tier"] = "UNCONNECTED"
+                    _save_wallet(wallet)
+
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 404):
+            logger.warning(f"Device unauthorized or not found on central server ({e.code}). Auto-disconnecting...")
+            wallet["isConnected"] = False
+            wallet["connectedAccount"] = None
+            wallet["licenseKey"] = None
+            wallet["deviceToken"] = None
+            wallet["tier"] = "UNCONNECTED"
+            _save_wallet(wallet)
+        else:
+            logger.debug(f"Live balance sync HTTP error: {e.code}")
     except Exception as e:
-        logger.debug(f"Live balance sync check: {e}")
+        logger.debug(f"Live balance sync check error: {e}")
 
 
 def get_wallet_status() -> Dict[str, Any]:
