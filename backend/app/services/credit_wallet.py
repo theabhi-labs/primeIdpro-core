@@ -150,9 +150,11 @@ def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
     try:
         machine_id = get_machine_hardware_id()
         req_url = f"{CENTRAL_API_URL}/devices/sync-wallet"
+        unsettled = wallet.get("unsettled_debit_tokens", 0)
         payload = {
             "email": account_id.strip(),
-            "installationId": machine_id
+            "installationId": machine_id,
+            "unsettledTokens": unsettled
         }
         req = urllib.request.Request(
             req_url,
@@ -173,8 +175,8 @@ def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
                     if prev_baseline is None:
                         # Initial sync baseline setup
                         wallet["cloudBalanceBaseline"] = cloud_bal
-                        wallet["credits"] = max(0, cloud_bal - unsettled)
-                    elif cloud_bal > prev_baseline:
+                        wallet["credits"] = cloud_bal
+                    elif cloud_bal > prev_baseline and unsettled == 0:
                         # Online top-up / recharge detected on web portal
                         recharge_delta = cloud_bal - prev_baseline
                         wallet["cloudBalanceBaseline"] = cloud_bal
@@ -190,8 +192,13 @@ def sync_cloud_wallet_balance(wallet: Dict[str, Any], force: bool = False):
                         wallet.setdefault("transactions", []).append(tx)
                         logger.info(f"🎉 Online recharge detected: +{recharge_delta} tokens for {account_id}")
                     else:
-                        # Normal sync - maintain local decremented balance
-                        wallet["credits"] = max(0, wallet["cloudBalanceBaseline"] - unsettled)
+                        # The server processed our unsettled tokens, update our baseline and clear unsettled
+                        wallet["cloudBalanceBaseline"] = cloud_bal
+                        wallet["credits"] = cloud_bal
+
+                    # Clear unsettled tokens as they've been sent to the server
+                    if unsettled > 0:
+                        wallet["unsettled_debit_tokens"] = 0
 
                     if data.get("centerCode"):
                         wallet["centerCode"] = data.get("centerCode")
