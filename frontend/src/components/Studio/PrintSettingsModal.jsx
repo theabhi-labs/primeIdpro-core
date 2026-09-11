@@ -402,12 +402,6 @@ const PrintSettingsModal = ({ settings, onSave, onClose }) => {
                   >
                     <RefreshCw size={15} /> Poll Now
                   </button>
-                  <button
-                    onClick={handleUnpairDevice}
-                    className="p-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded-xl border border-rose-500/30 text-xs font-bold flex items-center gap-2 transition-all active:scale-95"
-                  >
-                    <Unlink size={15} /> Disconnect
-                  </button>
                 </div>
               )}
             </div>

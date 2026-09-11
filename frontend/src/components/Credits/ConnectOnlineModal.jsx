@@ -113,16 +113,15 @@ export default function ConnectOnlineModal() {
             </div>
           </div>
 
-          {/* Only allow close if already connected */}
-          {isConnected && (
-            <button
-              type="button"
-              onClick={closeConnectModal}
-              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-            >
-              <X size={18} />
-            </button>
-          )}
+          {/* Close Button */}
+          <button
+            type="button"
+            onClick={closeConnectModal}
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
+            title="Close Modal"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* Modal Alert (if opened due to blocked action / insufficient tokens) */}
@@ -269,17 +268,7 @@ export default function ConnectOnlineModal() {
                 <ExternalLink size={14} />
               </button>
 
-              {/* Disconnect Option */}
-              <div className="pt-2 flex justify-between items-center text-xs">
-                <button
-                  type="button"
-                  onClick={handleDisconnect}
-                  disabled={isSubmitting}
-                  className="text-red-400 hover:text-red-300 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <LogOut size={14} /> Disconnect Account
-                </button>
-
+              <div className="pt-2 flex justify-end items-center text-xs">
                 <button
                   type="button"
                   onClick={closeConnectModal}
