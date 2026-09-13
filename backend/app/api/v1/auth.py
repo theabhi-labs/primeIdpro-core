@@ -5,32 +5,36 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-# We'll use a local json file to store the auth state for now
-AUTH_STORE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "core", "auth_store.json")
+# We'll use a local json file in the user's home directory to store the auth state
+# so it doesn't get packaged into the electron distribution
+AUTH_STORE_PATH = os.path.join(os.path.expanduser("~"), ".primeidpro", "auth_store.json")
 
 class LoginRequest(BaseModel):
     email: str
     password: str
 
+from app.services.credit_wallet import connect_online_account
+
 @router.post("/login")
 async def login(req: LoginRequest):
     """
-    Mock login to web platform.
-    In real production, this would call the remote web API.
+    Login to web platform and register device.
     """
-    # Simple mock authentication
-    if req.email and req.password:
-        token = "mock_jwt_token_from_web_api"
-        # Save securely locally
-        with open(AUTH_STORE_PATH, "w") as f:
-            json.dump({"token": token, "email": req.email, "loggedIn": True}, f)
-        
-        return {
-            "success": True,
-            "token": token,
-            "message": "Login successful"
-        }
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    # This authenticates with central platform and registers this physical device
+    wallet_status = connect_online_account(req.email, req.password)
+    token = wallet_status.get("deviceToken", "fallback_token")
+    
+    # Save securely locally to maintain auth state
+    os.makedirs(os.path.dirname(AUTH_STORE_PATH), exist_ok=True)
+    with open(AUTH_STORE_PATH, "w") as f:
+        json.dump({"token": token, "email": req.email, "loggedIn": True}, f)
+    
+    return {
+        "success": True,
+        "token": token,
+        "message": "Login successful",
+        "wallet": wallet_status
+    }
 
 @router.get("/status")
 async def check_status():

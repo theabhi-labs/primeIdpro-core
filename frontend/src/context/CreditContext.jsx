@@ -35,10 +35,11 @@ export function CreditProvider({ children }) {
         setTier(data.tier || 'UNCONNECTED');
         if (data.rates) setRates(data.rates);
 
-        // Mandatory first-time connect enforcement
-        if (!connected) {
-          setShowConnectModal(true);
-        }
+        // Removed automatic ConnectOnlineModal popup to avoid conflict with FirstTimeSetup.
+        // FirstTimeSetup handles the initial login flow.
+        // if (!connected) {
+        //   setShowConnectModal(true);
+        // }
       }
     } catch (err) {
       console.error('Failed to fetch credit status:', err);

@@ -39,7 +39,6 @@ async def upload_single(
     processing_status[image_id] = {"status": "pending", "progress": 0}
 
     # Retrieve models from app state
-    face_mesh = getattr(request.app.state, "mp_face_mesh", None)
     face_cascade = getattr(request.app.state, "face_cascade", None)
     alt_cascade = getattr(request.app.state, "face_cascade_alt", None)
 
@@ -49,7 +48,6 @@ async def upload_single(
             country_code,
             bg_color,
             restore_vintage=restore_vintage,
-            face_mesh=face_mesh,
             face_cascade=face_cascade,
             alt_cascade=alt_cascade
         )
@@ -76,7 +74,6 @@ async def upload_batch(
     restore_vintage: bool = Form(False)
 ):
     results = []
-    face_mesh = getattr(request.app.state, "mp_face_mesh", None)
     face_cascade = getattr(request.app.state, "face_cascade", None)
     alt_cascade = getattr(request.app.state, "face_cascade_alt", None)
 
@@ -105,7 +102,6 @@ async def upload_batch(
                 country_code,
                 bg_color,
                 restore_vintage=restore_vintage,
-                face_mesh=face_mesh,
                 face_cascade=face_cascade,
                 alt_cascade=alt_cascade
             )

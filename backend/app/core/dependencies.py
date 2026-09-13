@@ -22,3 +22,37 @@ def get_db_instance(request: Request):
             detail="Database is temporarily unavailable. Please retry in a few seconds.",
         )
     return mongo_db
+
+
+async def get_current_user(request: Request):
+    """
+    V2 Development Auth Stub. 
+    In production, this would decode a real JWT. 
+    For Phase 1 isolated testing, it extracts a simple Bearer token.
+    Format: 'Bearer test-user_id:test-org_id'
+    """
+    from app.models.card_studio_v2 import V2UserContext
+    
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = auth_header.split(" ")[1]
+    
+    from app.core.config import settings
+    if settings.environment != "development":
+        # Production auth logic would go here
+        raise HTTPException(status_code=401, detail="Production authentication not yet implemented or invalid token.")
+    
+    # DEV STUB: accept token format "user_id:org_id"
+    if ":" not in token:
+        # Fallback dummy logic if just a plain token is passed in dev
+        if token == "test-token":
+            return V2UserContext(user_id="test-user", organization_id="test-org")
+        raise HTTPException(status_code=401, detail="Invalid token format for V2 dev stub")
+    
+    try:
+        user_id, org_id = token.split(":", 1)
+        return V2UserContext(user_id=user_id, organization_id=org_id)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Failed to parse token")

@@ -19,6 +19,7 @@ const ProcessedPhotosGrid = ({
   uploads = [],
   onEdit,
   onDelete,
+  onClearAll,
   onSelectForCopy,
   onSelectMultiple,
 }) => {
@@ -73,6 +74,16 @@ const ProcessedPhotosGrid = ({
             <MousePointer2 size={14} />
             <span>{selectMode ? 'Cancel Selection' : 'Batch Select'}</span>
           </button>
+          
+          {!selectMode && completedPhotos.length > 0 && (
+            <button
+              onClick={onClearAll}
+              className="flex items-center gap-2 px-4 py-2 bg-red-950/40 text-red-400 rounded-xl text-xs font-semibold hover:bg-red-900/60 transition-all border border-red-900/50 cursor-pointer"
+            >
+              <Trash2 size={14} />
+              <span>Clear All</span>
+            </button>
+          )}
 
           {selectMode && (
             <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950 px-3 py-1 rounded-full border border-cyan-800">

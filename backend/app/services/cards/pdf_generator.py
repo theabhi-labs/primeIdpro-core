@@ -77,6 +77,8 @@ def _extract_template_parts(template_id: str) -> Tuple[str, jinja2.Template]:
     body_template_str = raw_html
     if "<body>" in raw_html and "</body>" in raw_html:
         body_template_str = raw_html.split("<body>")[1].split("</body>")[0]
+    elif "{% if side == 'front' %}" in raw_html:
+        body_template_str = raw_html[raw_html.find("{% if side == 'front' %}"):]
     elif '<div class="card-container">' in raw_html:
         body_template_str = raw_html[raw_html.find('<div class="card-container">'):]
 

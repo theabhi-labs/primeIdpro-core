@@ -490,39 +490,4 @@ async def create_new_batch(project_id: str, name: Optional[str] = None):
     return {"success": True, "batch": new_batch, "project": project}
 
 
-# ---------------- 10. CUSTOM TEMPLATE BACKGROUND UPLOAD ----------------
-@card_router.post("/templates/custom-upload")
-async def upload_custom_template_background(
-    file: UploadFile = File(...),
-    templateName: str = Form(...),
-    orientation: str = Form("vertical")
-):
-    """Uploads a custom blank template background image (PNG/JPG) for a private school template."""
-    file_bytes = await file.read()
-    ext = os.path.splitext(file.filename or ".png")[1].lower()
-    if ext not in [".png", ".jpg", ".jpeg", ".svg"]:
-        raise HTTPException(status_code=400, detail="Only PNG, JPG, or SVG backgrounds are supported.")
-
-    custom_id = f"custom-{uuid.uuid4().hex[:8]}"
-    out_dir = os.path.join(UPLOAD_DIR, "custom_templates", custom_id)
-    os.makedirs(out_dir, exist_ok=True)
-
-    bg_path = os.path.join(out_dir, f"background{ext}")
-    with open(bg_path, "wb") as f:
-        f.write(file_bytes)
-
-    # Generate data url for preview
-    import base64
-    b64 = base64.b64encode(file_bytes).decode("utf-8")
-    mime = "image/svg+xml" if ext == ".svg" else ("image/jpeg" if "jp" in ext else "image/png")
-    data_url = f"data:{mime};base64,{b64}"
-
-    return {
-        "success": True,
-        "templateId": custom_id,
-        "templateName": templateName,
-        "orientation": orientation,
-        "backgroundUrl": data_url,
-        "filePath": bg_path
-    }
 

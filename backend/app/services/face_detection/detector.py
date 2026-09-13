@@ -3,6 +3,7 @@ import logging
 import cv2
 import numpy as np
 from PIL import Image
+import threading
 from app.services.resize.presets import COUNTRY_PRESETS
 from app.services.face_detection.fallbacks import align_crop_cascade_fallback, center_crop_fallback
 
@@ -62,11 +63,10 @@ def calculate_passport_crop(
 
 def align_and_crop_face(
     rgba_img: Image.Image,
-    country_code: str,
+    country_code: str = "india",
     dpi: int = 300,
     scale_adjust: float = 1.0,
     center_shift: tuple = (0.0, 0.0),
-    face_mesh=None,
     face_cascade=None,
     alt_cascade=None
 ):
@@ -89,28 +89,21 @@ def align_and_crop_face(
     W = preset.get("target_w_px", int(round(width_mm / 25.4 * dpi)))
     H = preset.get("target_h_px", int(round(height_mm / 25.4 * dpi)))
 
-    close_mesh = False
-    if face_mesh is None:
-        try:
-            import mediapipe as mp
-            face_mesh = mp.solutions.face_mesh.FaceMesh(
-                static_image_mode=True,
-                max_num_faces=2,
-                refine_landmarks=True,
-                min_detection_confidence=0.5
-            )
-            close_mesh = True
-        except Exception as e:
-            logger.warning(f"Could not load MediaPipe FaceMesh on-demand: {e}")
-
-    if face_mesh is None:
-        logger.warning("FaceMesh not available, falling back to Haar Cascade")
+    img_rgb = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB) if img_np.shape[2] == 4 else cv2.cvtColor(img_np, cv2.COLOR_RGB2RGB)
+    
+    try:
+        import mediapipe as mp
+        with mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=True,
+            max_num_faces=2,
+            refine_landmarks=True,
+            min_detection_confidence=0.5
+        ) as fm:
+            results = fm.process(img_rgb)
+    except Exception as e:
+        logger.error(f"Failed to process with local FaceMesh: {e}")
         return align_crop_cascade_fallback(img_np, country_code, dpi, face_cascade, alt_cascade)
 
-    img_rgb = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB) if img_np.shape[2] == 4 else cv2.cvtColor(img_np, cv2.COLOR_RGB2RGB)
-    results = face_mesh.process(img_rgb)
-    if close_mesh and face_mesh:
-        face_mesh.close()
 
     if not results.multi_face_landmarks:
         logger.warning("No face landmarks detected, falling back to Haar Cascade")

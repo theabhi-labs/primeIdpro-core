@@ -94,6 +94,7 @@ export default function CardVisualPreview({ templateId = 'school-modern-blue', s
             srcDoc={htmlContent}
             className="w-full h-full border-none"
             style={{ pointerEvents: 'none' }}
+            sandbox="allow-scripts allow-same-origin"
           />
         )}
       </div>

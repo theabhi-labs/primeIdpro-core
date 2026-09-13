@@ -276,6 +276,7 @@ export default function Step8_PreflightAndGenerate({ project, updateProject, onP
                   srcDoc={previewHtml}
                   title="Card Preview"
                   className="w-full h-full border-none pointer-events-auto rounded-xl"
+                  sandbox="allow-scripts allow-same-origin"
                 />
               </div>
             ) : (

@@ -28,7 +28,6 @@ def detect_face_crop(
     country_code: str = "india",
     bg_color: str = "white",
     dpi: int = 300,
-    face_mesh=None,
     face_cascade=None,
     alt_cascade=None
 ):
@@ -48,7 +47,6 @@ def detect_face_crop(
         dpi=dpi,
         scale_adjust=scale_adj,
         center_shift=shift,
-        face_mesh=face_mesh,
         face_cascade=face_cascade,
         alt_cascade=alt_cascade
     )
@@ -68,8 +66,7 @@ def detect_face_crop(
     is_valid, v_log, suggestions = verify_passport_quality(
         refined_rgba,
         country_code=country_code,
-        dpi=dpi,
-        face_mesh=face_mesh
+        dpi=dpi
     )
 
     # Save with embedded 300 DPI metadata
@@ -90,7 +87,6 @@ async def process_image_async(
     denoise_level: float = 0.50,
     color_vibrance: float = 1.08,
     hair_depth: float = 1.30,
-    face_mesh=None,
     face_cascade=None,
     alt_cascade=None
 ):
@@ -121,7 +117,6 @@ async def process_image_async(
             country_code,
             bg_color,
             300,
-            face_mesh,
             face_cascade,
             alt_cascade
         )

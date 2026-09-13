@@ -37,7 +37,7 @@ async function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false, // Isolated preload bridge
-            devTools: false // DevTools strictly disabled
+            devTools: true // DevTools strictly enabled for debugging
         }
     });
 
@@ -59,8 +59,9 @@ async function createWindow() {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.setAlwaysOnTop(false);
             // Apply Content Protection after the window is fully initialized
-            mainWindow.setContentProtection(true);
-            logger.info("SCREENSHOT_PROTECTION_ENABLED");
+            mainWindow.setContentProtection(false);
+            logger.info("SCREENSHOT_PROTECTION_DISABLED");
+            mainWindow.webContents.openDevTools(); // Force open devtools
         }
     }, 1000);
 

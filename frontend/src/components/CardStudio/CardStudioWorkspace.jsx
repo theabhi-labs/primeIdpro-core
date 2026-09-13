@@ -1030,7 +1030,7 @@ const CardStudioWorkspace = ({ projectId, onBack, setToast }) => {
                 srcDoc={previewHtml}
                 title="Card Preview"
                 className="w-full h-full border-none pointer-events-auto"
-                sandbox="allow-same-origin"
+                sandbox="allow-scripts allow-same-origin"
               />
             ) : (
               <div className="text-center p-6 text-slate-400">

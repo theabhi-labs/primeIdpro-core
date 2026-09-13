@@ -32,11 +32,12 @@ class CreditManager {
    */
   getBalance() {
     const db = sqliteDb.getDb();
-    const state = db.prepare('SELECT local_available_balance FROM credit_state WHERE id = 1').get();
+    const state = db.prepare('SELECT local_available_balance, account_id FROM credit_state WHERE id = 1').get();
     const device = db.prepare('SELECT status FROM device_state WHERE id = 1').get();
     
     return {
       balance: state ? state.local_available_balance : 0,
+      account_id: state ? state.account_id : null,
       status: device ? device.status : 'ACTIVE'
     };
   }
@@ -87,6 +88,12 @@ class CreditManager {
     try {
       applyTx();
       logger.info('CREDIT_RESERVED', { txId, amount, reason });
+      
+      // Trigger sync instantly for real-time web reflection
+      try {
+        syncQueue.processQueue();
+      } catch (e) {}
+
       return txId;
     } catch (err) {
       logger.error('CREDIT_RESERVE_FAILED', { error: err.message });

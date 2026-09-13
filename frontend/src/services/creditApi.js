@@ -16,9 +16,9 @@ export const fetchCreditStatus = async () => {
       const res = await window.electronAPI.credits.getStatus();
       if (res.success) {
         return {
-          isConnected: true,
+          isConnected: !!res.account_id,
           credits: res.balance,
-          connectedAccount: 'Local Session',
+          connectedAccount: res.account_id || 'Local Session',
           tier: res.status === 'DEACTIVATED' ? 'DEACTIVATED' : 'V1',
           rates: { passportPhotoPrint: 2, idCardPrintPerUnit: 5 }
         };

@@ -262,17 +262,30 @@ async def get_standards():
 async def get_engine_status():
     """
     Returns the live AI engine status:
-    - Cloud AI (RMBG-2.0 via Replicate / Bria / Custom) status
     - Local Neural Fallback (IS-Net / u2net_human_seg) status
     """
     from app.core.config import settings
+    from app.services.background.remover import is_model_loaded
+    import os
     
     token = getattr(settings, "replicate_api_token", "") or os.environ.get("REPLICATE_API_TOKEN", "")
     rmbg_enabled = getattr(settings, "rmbg_enabled", True)
     custom_endpoint = getattr(settings, "custom_rmbg_endpoint", "") or os.environ.get("RMBG_CUSTOM_ENDPOINT", "")
     
     has_cloud_config = bool(token or custom_endpoint) and rmbg_enabled
+    offline_ready = is_model_loaded()
     
+    # Calculate download progress
+    download_progress = 0.0
+    if not offline_ready:
+        model_path = os.path.expanduser("~/.u2net/u2net_human_seg.onnx")
+        if os.path.exists(model_path):
+            current_size = os.path.getsize(model_path)
+            expected_size = 175997641 # ~176 MB
+            download_progress = min(99.0, (current_size / expected_size) * 100)
+    else:
+        download_progress = 100.0
+        
     return {
         "success": True,
         "data": {
@@ -282,6 +295,7 @@ async def get_engine_status():
             "cloud_engine": "RMBG-2.0 Ultra Cloud AI (Sub-Pixel Hair)",
             "local_engine": "IS-Net High-Definition Engine (100% Offline)",
             "mode": "hybrid_auto",
-            "offline_ready": True
+            "offline_ready": offline_ready,
+            "download_progress": download_progress
         }
     }

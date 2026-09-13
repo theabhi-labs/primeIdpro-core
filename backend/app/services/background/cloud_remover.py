@@ -75,8 +75,8 @@ def remove_background_replicate(input_path: str, output_path: str, api_token: st
             if not poll_url:
                 return False
             
-            for _ in range(30):
-                time.sleep(0.5)
+            for _ in range(180): # Wait up to 3 minutes for cold boots
+                time.sleep(1.0)
                 poll_resp = requests.get(poll_url, headers=headers, timeout=10.0)
                 if poll_resp.status_code == 200:
                     poll_data = poll_resp.json()

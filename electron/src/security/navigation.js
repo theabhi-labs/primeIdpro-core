@@ -74,6 +74,8 @@ function setupNavigationGuards(win) {
     win.setMenu(null);
 
     // Block keyboard shortcuts for DevTools (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I, Ctrl+U)
+    // Disabled for debugging
+    /*
     win.webContents.on("before-input-event", (event, input) => {
         const key = input.key ? input.key.toUpperCase() : "";
         const isDevShortcut =
@@ -90,6 +92,7 @@ function setupNavigationGuards(win) {
     win.webContents.on("devtools-opened", () => {
         win.webContents.closeDevTools();
     });
+    */
 }
 
 module.exports = {

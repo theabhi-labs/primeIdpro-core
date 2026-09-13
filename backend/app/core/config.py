@@ -62,7 +62,11 @@ class Settings(BaseSettings):
         return self.cors_origins
 
     class Config:
-        env_file = ".env"
+        import sys
+        if hasattr(sys, '_MEIPASS'):
+            env_file = os.path.join(sys._MEIPASS, ".env")
+        else:
+            env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
 

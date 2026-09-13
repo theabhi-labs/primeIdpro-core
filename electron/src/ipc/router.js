@@ -304,8 +304,8 @@ function registerIpcHandlers() {
     // CREDITS
     ipcMain.handle("credits:status", () => {
         try {
-            const { balance, status } = creditManager.getBalance();
-            return { success: true, balance, status };
+            const { balance, status, account_id } = creditManager.getBalance();
+            return { success: true, balance, status, account_id };
         } catch (err) {
             return { success: false, error: err.message };
         }

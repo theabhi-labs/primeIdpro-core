@@ -3,7 +3,7 @@ import os
 import sys
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('app', 'app'), ('models', 'models')]
+datas = [('app', 'app'), ('models', 'models'), ('.env', '.')]
 binaries = []
 hiddenimports = [
     'motor.motor_asyncio', 'pymongo', 'beanie',

@@ -167,12 +167,18 @@ def get_wallet_status() -> Dict[str, Any]:
     }
 
 
-def _sync_sqlite_device_state(center_id: str, device_id: str, center_name: str, center_code: str, wallet_balance: int):
+def _sync_sqlite_device_state(center_id: str, device_id: str, center_name: str, center_code: str, wallet_balance: int, account_id: str, machine_id: str):
     try:
         import sqlite3
         import datetime
-        appdata = os.environ.get("USERPROFILE") or os.environ.get("APPDATA") or os.path.expanduser("~")
-        sqlite_path = os.path.join(appdata, ".primeidpro", "data", "primeidpro.sqlite")
+        
+        # Match Electron's config.js DB_PATH resolution
+        if sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
+            sqlite_path = os.path.join(os.environ.get("LOCALAPPDATA"), "PrimeIdPro", "data", "primeidpro.sqlite")
+        else:
+            appdata = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+            sqlite_path = os.path.join(appdata, ".primeidpro", "data", "primeidpro.sqlite")
+            
         if os.path.exists(sqlite_path) and center_id and center_code:
             conn = sqlite3.connect(sqlite_path)
             cur = conn.cursor()
@@ -192,9 +198,14 @@ def _sync_sqlite_device_state(center_id: str, device_id: str, center_name: str, 
                 INSERT OR REPLACE INTO app_state (key, value, updated_at)
                 VALUES ('center_metadata', ?, ?)
             """, (meta, now))
+            # IMPORTANT: Sync credit_state so Electron UI can read the balance
+            cur.execute("""
+                INSERT OR REPLACE INTO credit_state (id, account_id, installation_id, server_confirmed_balance, local_available_balance, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?)
+            """, (account_id, machine_id, wallet_balance, wallet_balance, now))
             conn.commit()
             conn.close()
-            logger.info("Synced device state to local SQLite database")
+            logger.info("Synced device state and credit state to local SQLite database")
     except Exception as e:
         logger.warning(f"Could not update SQLite device state: {e}")
 
@@ -276,7 +287,9 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
                 device_id=remote_data.get("deviceId") or "PIP-DESK-ACTIVE",
                 center_name=center.get("centerName") or account_id.strip(),
                 center_code=center.get("centerCode"),
-                wallet_balance=wallet["credits"]
+                wallet_balance=wallet["credits"],
+                account_id=account_id.strip(),
+                machine_id=machine_id
             )
     else:
         # Fallback if offline

@@ -54,7 +54,7 @@ export default function usePhotoProcessing() {
         }));
         setUploads(prev => [...prev, ...newUploads]);
 
-        for (const upload of newUploads) {
+        const processUpload = async (upload) => {
             try {
                 updateStatus(upload.id, { status: 'uploading', progress: 10 });
                 const uploadRes = await uploadImage(upload.file, countryCode, 'white', restoreVintage);
@@ -83,7 +83,22 @@ export default function usePhotoProcessing() {
                     error: err.message,
                 });
             }
+        };
+
+        const MAX_CONCURRENT = 1; // Process ONE BY ONE strictly
+        let index = 0;
+        const executeNext = async () => {
+            if (index >= newUploads.length) return;
+            const current = newUploads[index++];
+            await processUpload(current);
+            await executeNext();
+        };
+
+        const workers = [];
+        for (let i = 0; i < Math.min(MAX_CONCURRENT, newUploads.length); i++) {
+            workers.push(executeNext());
         }
+        await Promise.all(workers);
     };
 
     const pollProcessing = async (uploadId, imageId) => {
@@ -145,6 +160,14 @@ export default function usePhotoProcessing() {
         ));
     };
 
+    const clearAllPhotos = () => {
+        uploads.forEach(photo => {
+            if (photo?.preview) URL.revokeObjectURL(photo.preview);
+        });
+        setUploads([]);
+        setProcessedPhotos([]);
+    };
+
     useEffect(() => {
         const completed = uploads.filter(u => u.status === 'completed' && u.processedUrl);
         setProcessedPhotos(completed);
@@ -156,5 +179,8 @@ export default function usePhotoProcessing() {
         uploadPhotos,
         removePhoto,
         updatePhotoUrl,
+        clearAllPhotos,
+        setUploads,
+        setProcessedPhotos,
     };
 }

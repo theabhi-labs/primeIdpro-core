@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import api, { restore4kEnhance } from '../../services/api';
+import api, { restore4kEnhance, magicAiBgFix } from '../../services/api';
 import {
   X,
   RotateCw,
@@ -39,6 +39,7 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
   const [hairDepth, setHairDepth] = useState(1.30);
   const [autoDeage, setAutoDeage] = useState(true);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isMagicFixing, setIsMagicFixing] = useState(false);
   const [compareSplit, setCompareSplit] = useState(50); // 0 - 100% split slider
   const [showCompare, setShowCompare] = useState(false);
 
@@ -198,6 +199,34 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
       console.error('Failed to apply 4K restoration:', err);
     } finally {
       setIsEnhancing(false);
+    }
+  };
+
+  // Run On-Demand Cloud AI Background Fix
+  const handleMagicBgFix = async () => {
+    const targetId = photo?.serverId || photo?.id;
+    if (!targetId) return;
+
+    setIsMagicFixing(true);
+    try {
+      const res = await magicAiBgFix(targetId, {
+        bgColor: replaceBg ? bgReplaceColor : '#FFFFFF',
+      });
+
+      const nextUrl = res?.data?.transparent_url || res?.data?.processed_url;
+      if (nextUrl) {
+        const newImg = new Image();
+        newImg.crossOrigin = 'Anonymous';
+        newImg.src = nextUrl;
+        newImg.onload = () => {
+          imgRef.current = newImg;
+          drawPreview();
+        };
+      }
+    } catch (err) {
+      console.error('Failed to apply Magic BG fix:', err);
+    } finally {
+      setIsMagicFixing(false);
     }
   };
 
@@ -377,22 +406,23 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
           </div>
 
           <div className="space-y-4 flex-1 pr-1 text-xs">
-            {/* Compact 4K Super-Enhance Button */}
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-slate-900 to-blue-950/40 border border-cyan-500/30 flex items-center justify-between gap-3 shadow-md">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 shrink-0">
-                  <Sparkles size={14} />
-                </div>
-                <div className="truncate">
-                  <p className="text-xs font-bold text-white truncate">4K Super-Resolution</p>
-                  <p className="text-[10px] text-slate-400 truncate">Auto-clarity & vintage denoise</p>
-                </div>
-              </div>
+            {/* Action Buttons: BG Eraser and 4K Enhance */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleMagicBgFix}
+                disabled={isMagicFixing || isEnhancing}
+                className="flex-1 px-3 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 border border-purple-500/30 text-purple-300 font-extrabold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isMagicFixing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                <span>{isMagicFixing ? 'Erasing...' : '🪄 BG Eraser'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleApply4kRestoration}
                 disabled={isEnhancing}
-                className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
+                className="flex-1 px-3 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer active:scale-95"
               >
                 {isEnhancing ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
                 <span>{isEnhancing ? 'Enhancing...' : '⚡ 4K Enhance'}</span>
@@ -559,6 +589,7 @@ const PhotoEditor = ({ photo, onSave, onClose, onDelete }) => {
 
           {/* Action Buttons */}
           <div className="mt-4 pt-4 border-t border-slate-800 space-y-2">
+
             <button
               onClick={handleSave}
               disabled={isSaving}

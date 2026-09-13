@@ -1,5 +1,10 @@
 print("[main.py] 1. importing core modules", flush=True)
 import os
+# --- CPU Optimization for Low-End Laptops ---
+os.environ["OMP_NUM_THREADS"] = "2"        # Limit AI to 2 CPU threads (Prevents 100% CPU lockup)
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"  # Free up CPU immediately when idle
+os.environ["ORT_TENSORRT_MAX_WORKSPACE_SIZE"] = "1073741824" # 1GB RAM Limit for ONNX
+# --------------------------------------------
 import logging
 from contextlib import asynccontextmanager
 
@@ -66,34 +71,29 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Face cascades loaded")
 
-    # Load MediaPipe FaceMesh
-    try:
-        import mediapipe as mp
-        app.state.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=2,
-            refine_landmarks=True,
-            min_detection_confidence=0.5
-        )
-        logger.info("✅ MediaPipe FaceMesh loaded successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to load MediaPipe FaceMesh: {e}")
-        app.state.mp_face_mesh = None
+    # MediaPipe FaceMesh instantiation removed to prevent concurrent state sharing
 
     # Connect to MongoDB
     mongo_db = await db.connect()
     app.state.mongo_db = mongo_db
     app.state.mongo_client = db.client
 
+    # Recover stale generation jobs (Phase 4 Hardening)
+    try:
+        from app.services.v2_cards.generation_service import recover_stale_jobs
+        await recover_stale_jobs(mongo_db)
+    except Exception as e:
+        logger.error(f"Failed to run stale job recovery: {str(e)}")
+
+    # Preload AI models in background to eliminate 1st photo delay
+    import asyncio
+    from app.services.background.remover import preload_models
+    asyncio.create_task(asyncio.to_thread(preload_models))
+
     yield
 
     # Clean shutdown
-    if hasattr(app.state, "mp_face_mesh") and app.state.mp_face_mesh:
-        try:
-            app.state.mp_face_mesh.close()
-            logger.info("MediaPipe FaceMesh closed")
-        except Exception as e:
-            logger.error(f"Error closing FaceMesh: {e}")
+    # FaceMesh cleanup removed (no longer globally instantiated)
 
     await db.disconnect()
     logger.info("Server shutting down")
@@ -126,6 +126,12 @@ app.mount("/processed", StaticFiles(directory=PROCESSED_DIR), name="processed")
 
 # ========== API ROUTERS ==========
 app.include_router(api_v1_router, prefix="/api/v1")
+
+# V2 Router
+from app.api.v2.cards.cards import cards_v2_router
+from app.api.v2.cards.generation import generation_router
+app.include_router(cards_v2_router, prefix="/api/v2/cards", tags=["Card Studio V2"])
+app.include_router(generation_router, prefix="/api/v2/cards")
 # Prime ID Pro v3.2.0 with Universal Card Studio & Credit Wallet
 
 

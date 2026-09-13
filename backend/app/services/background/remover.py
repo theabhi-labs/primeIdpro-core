@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import logging
+import threading
 import cv2  # pyrefly: ignore [missing-import]
 import numpy as np  # pyrefly: ignore [missing-import]
 from PIL import Image  # pyrefly: ignore [missing-import]
@@ -11,7 +12,10 @@ logger = logging.getLogger("primeidpro.background")
 
 
 _cached_rembg_sessions = {}
+_rembg_lock = threading.Lock()
 
+def is_model_loaded():
+    return "u2net_human_seg" in _cached_rembg_sessions
 
 def _ensure_u2net_home():
     """Ensure U2NET_HOME points to bundled models folder and ~/.u2net is populated for 100% offline usage on any PC."""
@@ -31,10 +35,11 @@ def _ensure_u2net_home():
             found_models_dir = cand
             break
 
+    user_u2net = os.path.expanduser("~/.u2net")
+    os.environ["U2NET_HOME"] = user_u2net
+    
     if found_models_dir:
-        os.environ["U2NET_HOME"] = found_models_dir
-        logger.info(f"Using bundled models from U2NET_HOME={found_models_dir}")
-        user_u2net = os.path.expanduser("~/.u2net")
+        logger.info(f"Copying bundled models to U2NET_HOME={user_u2net}")
         try:
             os.makedirs(user_u2net, exist_ok=True)
             for fname in os.listdir(found_models_dir):
@@ -120,28 +125,18 @@ def clean_anatomical_portrait_mask(rgba_img: Image.Image) -> Image.Image:
 
 def remove_background_lightweight(input_path: str, output_path: str, allow_cloud: bool = True) -> bool:
     """
-    Primary Background Removal Engine:
-    1. If allow_cloud=True (Passport Studio): Attempts RMBG-2.0 Cloud AI for sub-pixel hair matting.
-    2. If allow_cloud=False (Card Studio bulk cards): Strictly runs 100% locally at ₹0 cost.
+    Primary Background Removal Engine (Hybrid):
+    1. Always runs 100% locally first via u2net_human_seg (or fallbacks).
+    2. Runs quality validation on the generated alpha mask.
+    3. If score >= 85, uses the local result.
+    4. If score < 85 and allow_cloud=True, sends original image to Cloud AI.
     """
-    # 1. Try RMBG-2.0 Cloud AI (Ultra-Sharp Portrait Matting) - Only for Passport Studio
-    if allow_cloud:
-        try:
-            from app.services.background.cloud_remover import remove_background_rmbg2_sync
-            if remove_background_rmbg2_sync(input_path, output_path):
-                # Validate output exists and has valid alpha
-                if os.path.exists(output_path):
-                    check = Image.open(output_path)
-                    if check.mode == "RGBA":
-                        logger.info("✅ Background successfully removed via RMBG-2.0 Cloud AI")
-                        return True
-        except Exception as cloud_err:
-            logger.debug(f"RMBG-2.0 Cloud AI skipped or failed: {cloud_err}")
-
-
-    # 2. Local Offline Neural Segmentation (isnet-general-use / u2net_human_seg / u2netp)
+    logger.info("[BG] Local background removal started")
+    
+    # 1. Local Offline Neural Segmentation (bria-rmbg / isnet-general-use)
     rembg_success = False
-
+    local_result_image = None
+    
     try:
         _ensure_u2net_home()
         import rembg  # type: ignore
@@ -149,27 +144,37 @@ def remove_background_lightweight(input_path: str, output_path: str, allow_cloud
         new_session_func = getattr(rembg, "new_session", None)
 
         if callable(remove_func) and callable(new_session_func):
-            for model_name in ["isnet-general-use", "u2net_human_seg", "u2netp"]:
+            # Use briarmbg (BriaAI RMBG-1.4) for Replicate-level quality locally, isnet as secondary
+            for model_name in ["briarmbg", "isnet-general-use", "u2net_human_seg"]:
                 try:
-                    if model_name not in _cached_rembg_sessions:
-                        _cached_rembg_sessions[model_name] = new_session_func(model_name)
-                    session = _cached_rembg_sessions[model_name]
-
                     pil_input = Image.open(input_path)
-                    # post_process_mask=False guarantees soft alpha matting (NO binary clipping of ears/hair)
-                    raw_output = remove_func(pil_input, session=session, post_process_mask=False)
+                    
+                    with _rembg_lock:
+                        if model_name not in _cached_rembg_sessions:
+                            # MEMORY OPTIMIZATION: Clear previous heavy models from RAM before loading a new one
+                            _cached_rembg_sessions.clear()
+                            import gc
+                            gc.collect()
+                            _cached_rembg_sessions[model_name] = new_session_func(model_name)
+                        session = _cached_rembg_sessions[model_name]
+
+                        # Disable alpha matting to prevent eroding full body photos and causing black borders
+                        raw_output = remove_func(
+                            pil_input, 
+                            session=session, 
+                            post_process_mask=True,
+                            alpha_matting=False
+                        )
 
                     if isinstance(raw_output, Image.Image):
                         # Apply non-destructive anatomical cleanup and color decontamination
-                        cleaned_output = clean_anatomical_portrait_mask(raw_output)
-                        cleaned_output.save(output_path, "PNG")
+                        local_result_image = clean_anatomical_portrait_mask(raw_output)
                     else:
                         continue
 
-                    # Validate alpha channel
-                    check = Image.open(output_path)
-                    if check.mode == "RGBA":
-                        alpha = np.array(check.split()[-1])
+                    # Validate alpha channel internally to ensure it's not totally broken
+                    if local_result_image.mode == "RGBA":
+                        alpha = np.array(local_result_image.split()[-1])
                         if (alpha < 250).sum() > (alpha.size * 0.02):
                             rembg_success = True
                             logger.info(f"✅ rembg ({model_name}) succeeded with clean human portrait segmentation")
@@ -225,7 +230,8 @@ def remove_background_lightweight(input_path: str, output_path: str, allow_cloud
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
             rgba = np.dstack([img_rgb, mask2])
             decont_rgba = decontaminate_edges(rgba)
-            Image.fromarray(decont_rgba, mode="RGBA").save(output_path, "PNG")
+            local_result_image = Image.fromarray(decont_rgba, mode="RGBA")
+            rembg_success = True
         except Exception as e2:
             logger.error(f"GrabCut fallback failed: {e2}")
             try:
@@ -235,14 +241,101 @@ def remove_background_lightweight(input_path: str, output_path: str, allow_cloud
                 mask = (r > 225) & (g > 225) & (b > 225)
                 np_img[:, :, 3] = np.where(mask, 0, 255)
                 decont_rgba = decontaminate_edges(np_img)
-                Image.fromarray(decont_rgba, mode="RGBA").save(output_path, "PNG")
-                return True
+                local_result_image = Image.fromarray(decont_rgba, mode="RGBA")
+                rembg_success = True
             except Exception as e3:
                 logger.error(f"Basic threshold fallback failed: {e3}")
-                return False
+                rembg_success = False
+                
+    logger.info("[BG] Local background removal completed")
+                
+    if not rembg_success or local_result_image is None:
+        logger.info("[BG] Local processing failed completely.")
+        return _handle_cloud_fallback(input_path, output_path, allow_cloud)
+        
+    # Validation Phase
+    try:
+        from app.services.background.validator import validate_bg_removal
+        orig_img_np = np.array(Image.open(input_path).convert("RGB"))
+        alpha_mask_np = np.array(local_result_image.split()[-1])
+        
+        validation = validate_bg_removal(orig_img_np, alpha_mask_np)
+        score = validation.get("score", 0)
+        reasons = validation.get("reasons", [])
+        
+        if reasons:
+            logger.info(f"[BG] Validator score={score} reasons={','.join(reasons)}")
+        else:
+            logger.info(f"[BG] Validator score={score}")
+            
+        if score >= 85:
+            logger.info("[BG] Decision=LOCAL")
+            local_result_image.save(output_path, "PNG")
+            return True
+        else:
+            logger.info("[BG] Decision=CLOUD")
+            if allow_cloud:
+                return _handle_cloud_fallback(input_path, output_path, allow_cloud)
+            else:
+                logger.info("[BG] Cloud not allowed. Proceeding with poor local result.")
+                local_result_image.save(output_path, "PNG")
+                return True
+                
+    except Exception as eval_err:
+        logger.error(f"Validator execution failed: {eval_err}")
+        # Phase 8 Error Safety: fallback if allowed, else use local
+        if allow_cloud:
+            return _handle_cloud_fallback(input_path, output_path, allow_cloud)
+        else:
+            local_result_image.save(output_path, "PNG")
+            return True
 
-    return True
+def _handle_cloud_fallback(input_path: str, output_path: str, allow_cloud: bool) -> bool:
+    if not allow_cloud:
+        return False
+        
+    logger.info("[BG] Cloud fallback started")
+    try:
+        from app.services.background.cloud_remover import remove_background_rmbg2_sync
+        if remove_background_rmbg2_sync(input_path, output_path):
+            if os.path.exists(output_path):
+                check = Image.open(output_path)
+                if check.mode == "RGBA":
+                    logger.info("[BG] Cloud fallback completed")
+                    return True
+    except Exception as cloud_err:
+        logger.debug(f"RMBG-2.0 Cloud AI skipped or failed: {cloud_err}")
+    
+    return False
 
+
+def preload_models():
+    """Background task to pre-load models into memory to eliminate 1st photo delay"""
+    try:
+        from app.core.config import settings
+        replicate_token = getattr(settings, "replicate_api_token", "") or os.environ.get("REPLICATE_API_TOKEN", "")
+        if replicate_token and getattr(settings, "rmbg_enabled", True):
+            # Send a dummy lightweight request to Replicate to wake up the model
+            import requests
+            try:
+                headers = {"Authorization": f"Bearer {replicate_token}", "Content-Type": "application/json", "Prefer": "wait"}
+                requests.get("https://api.replicate.com/v1/models/briaai/rmbg-2.0", headers=headers, timeout=5.0)
+            except Exception:
+                pass
+                
+        # Pre-load local fallback AI models into memory
+        _ensure_u2net_home()
+        import rembg
+        new_session_func = getattr(rembg, "new_session", None)
+        if callable(new_session_func):
+            # OPTIMIZATION: Preload briarmbg
+            for model_name in ["briarmbg"]:
+                if model_name not in _cached_rembg_sessions:
+                    logger.info(f"Pre-loading local AI model: {model_name}")
+                    _cached_rembg_sessions[model_name] = new_session_func(model_name)
+                    logger.info(f"Successfully pre-loaded: {model_name}")
+    except Exception as e:
+        logger.warning(f"Background pre-load failed: {e}")
 
 # Alias for backward compatibility
 remove_background = remove_background_lightweight

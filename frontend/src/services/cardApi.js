@@ -27,12 +27,6 @@ export const getTemplateSamplePreview = async (templateId, side = 'front') => {
   return res.data;
 };
 
-export const uploadCustomTemplateApi = async (formData) => {
-  const res = await getClient().post('/templates/custom-upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return res.data;
-};
 
 // ---------------- PROJECTS CRUD ----------------
 export const listCardProjects = async () => {

@@ -9,6 +9,8 @@ import usePrintSettings from './hooks/usePrintSettings';
 import Toast from './components/Common/Toast';
 import LoadingSpinner from './components/Common/LoadingSpinner';
 import CardStudioRoot from './components/CardStudio/CardStudioRoot';
+import CardStudioV2Root from './components/CardStudioV2/CardStudioV2Root';
+import PublicCollectionForm from './components/CardStudioV2/PublicCollectionForm';
 import RecommendationBanner from './components/Credits/RecommendationBanner';
 import CreditMeterBadge from './components/Credits/CreditMeterBadge';
 import ConnectOnlineModal from './components/Credits/ConnectOnlineModal';
@@ -57,13 +59,13 @@ import {
 } from 'lucide-react';
 
 function App() {
-  // -------- Core State (PRESERVED 100%) --------
   const {
     uploads,
     processedPhotos,
     uploadPhotos,
     removePhoto,
     updatePhotoUrl,
+    clearAllPhotos,
   } = usePhotoProcessing();
 
   const { settings, updateSettings, resetToDefaults } = usePrintSettings();
@@ -89,6 +91,8 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [offlineReady, setOfflineReady] = useState(true);
+  const [downloadProgress, setDownloadProgress] = useState(100);
 
   // Check auth status on mount
   useEffect(() => {
@@ -164,7 +168,7 @@ function App() {
     const interval = setInterval(fetchDeviceStatus, 10000);
     return () => clearInterval(interval);
   }, []);
-
+  
   // -------- Online Jobs Poller & Thumbnail Loader --------
   const [onlineJobs, setOnlineJobs] = useState([]);
   const [jobThumbnails, setJobThumbnails] = useState({});
@@ -201,6 +205,21 @@ function App() {
   useEffect(() => {
     fetchOnlineJobs();
     const interval = setInterval(fetchOnlineJobs, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const fetchEngineStatus = async () => {
+      try {
+        const res = await api.get('/process/engine-status');
+        if (res.data?.success) {
+          setOfflineReady(res.data.data.offline_ready);
+          setDownloadProgress(res.data.data.download_progress || 0);
+        }
+      } catch (e) {}
+    };
+    fetchEngineStatus();
+    const interval = setInterval(fetchEngineStatus, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -812,6 +831,12 @@ function App() {
   // Current selected country metadata
   const currentCountryObj = countries.find(c => c.code === selectedCountry) || { name: 'India', standard: '35x45 mm' };
 
+  // -------- Public Route Interception --------
+  const pathParts = window.location.pathname.split('/');
+  if (pathParts[1] === 'collect' && pathParts[2]) {
+    return <PublicCollectionForm token={pathParts[2]} />;
+  }
+
   // -------- Render (Fixed 100vh Single-Page Dashboard Layout) --------
   if (checkingAuth) {
     return <div className="h-screen w-screen bg-[#111827] flex items-center justify-center"><Loader2 className="animate-spin text-cyan-500" size={32} /></div>;
@@ -848,6 +873,7 @@ function App() {
                   <Camera className="w-5 h-5 text-white" />
                 </div>
                 <div>
+
                   <div className="flex items-center gap-1.5">
                     <span className="font-black text-lg tracking-tight text-white">Prime<span className="text-cyan-400">ID</span></span>
                     <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">PRO</span>
@@ -912,17 +938,43 @@ function App() {
                   ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
               }`}
-              title="Card Studio"
+              title="Card Studio V1"
             >
               <CreditCard className="w-5 h-5 shrink-0" />
               {!isSidebarCollapsed && (
                 <>
-                  <span>Card Studio</span>
+                  <span>Card Studio V1</span>
                   {currentWorkspace === 'card-studio' ? (
                     <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
                   ) : (
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800 font-bold">
+                      v1.0
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+
+            {/* Card Studio V2 link */}
+            <button
+              type="button"
+              onClick={() => setCurrentWorkspace('card-studio-v2')}
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
+                currentWorkspace === 'card-studio-v2'
+                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
+              }`}
+              title="Card Studio V2"
+            >
+              <Sparkles className="w-5 h-5 shrink-0 text-cyan-400" />
+              {!isSidebarCollapsed && (
+                <>
+                  <span>Card Studio V2</span>
+                  {currentWorkspace === 'card-studio-v2' ? (
+                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+                  ) : (
                     <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-cyan-500/10 rounded text-cyan-400 border border-cyan-500/20 font-bold">
-                      v2.0
+                      NEW
                     </span>
                   )}
                 </>
@@ -932,15 +984,8 @@ function App() {
 
         </div>
 
-        {/* Sidebar Bottom: Credit & Sync / Connect Widget */}
+        {/* Sidebar Bottom */}
         <div className={`pt-4 border-t border-slate-900 ${isSidebarCollapsed ? 'flex justify-center' : ''}`}>
-          {isSidebarCollapsed ? (
-            <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-cyan-500 cursor-pointer" title="Credits">
-              <Zap size={18} />
-            </div>
-          ) : (
-            <CreditMeterBadge className="w-full" />
-          )}
         </div>
       </aside>
 
@@ -948,6 +993,10 @@ function App() {
       {currentWorkspace === 'card-studio' ? (
         <main className="flex-1 flex flex-col h-full overflow-hidden relative">
           <CardStudioRoot setToast={setToast} />
+        </main>
+      ) : currentWorkspace === 'card-studio-v2' ? (
+        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50">
+          <CardStudioV2Root />
         </main>
       ) : (
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900/40 relative">
@@ -981,40 +1030,6 @@ function App() {
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
 
-            {/* Live AI Engine & Offline/Online Status Indicator */}
-            <div
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs ml-2 transition-all shadow-sm ${
-                isOnline
-                  ? 'bg-slate-900/90 border-slate-800 text-slate-200'
-                  : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
-              }`}
-              title={
-                isOnline
-                  ? 'Smart AI Engine: Online Cloud RMBG-2.0 active with instant local offline fallback'
-                  : 'Offline Mode: 100% Free Local AI Engine Active'
-              }
-            >
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  isOnline
-                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse'
-                    : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
-                }`}
-              />
-              <span className="font-extrabold text-[11px] tracking-wide flex items-center gap-1.5">
-                {isOnline ? (
-                  <>
-                    <Sparkles size={12} className="text-cyan-400" />
-                    <span>Cloud Active</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap size={12} className="text-amber-400" />
-                    <span>Local Mode</span>
-                  </>
-                )}
-              </span>
-            </div>
           </div>
 
 
@@ -1211,6 +1226,7 @@ function App() {
                 uploads={uploads}
                 onEdit={handleEditPhoto}
                 onDelete={(id) => removePhoto(id, true)}
+                onClearAll={clearAllPhotos}
                 onSelectForCopy={handleSelectForCopy}
                 onSelectMultiple={handleSelectMultiple}
               />
@@ -1249,13 +1265,28 @@ function App() {
 
             <div className="w-[1px] h-3.5 bg-slate-800" />
 
-            {/* AI Optimization Text */}
-            <div className="flex items-center gap-1.5 text-slate-400 font-medium">
-              <Zap size={13} className={isOnline ? "text-cyan-400 fill-cyan-400" : "text-amber-400 fill-amber-400"} />
-              <span className="text-[11px] text-slate-300">
-                {isOnline ? "Cloud Active" : "Local Mode"}
-              </span>
+            {/* Local AI Engine Status (Always Visible) */}
+            <div className="flex items-center gap-1.5 text-slate-400 font-medium relative">
+              <Zap size={13} className={!offlineReady ? "text-amber-400 animate-pulse" : "text-emerald-400 fill-emerald-400"} />
+              {!offlineReady ? (
+                <div className="flex flex-col ml-1">
+                  <span className="text-[11px] text-slate-300">
+                    Downloading AI ({Math.round(downloadProgress)}%)
+                  </span>
+                  <div className="w-24 h-1 bg-slate-800 rounded-full mt-0.5 overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-400 transition-all duration-300 ease-out"
+                      style={{ width: `${downloadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-[11px] text-slate-300">
+                  Local AI Ready
+                </span>
+              )}
             </div>
+
           </div>
         </div>
 

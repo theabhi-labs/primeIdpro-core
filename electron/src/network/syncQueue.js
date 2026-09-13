@@ -106,11 +106,16 @@ class SyncQueue {
         } else if (item.event_type === "ANALYTICS_EVENT") {
             endpoint = "/analytics/sync";
         } else if (item.event_type === "CREDIT_TRANSACTION") {
-            endpoint = "/transactions/sync";
+            endpoint = "/devices/sync-wallet";
             // Fetch the full transaction details from SQLite
             const tx = db.prepare('SELECT * FROM credit_transactions WHERE id = ?').get(payload.transactionId);
             if (tx) {
-                requestPayload = { transaction: tx };
+                requestPayload = { 
+                    transactionId: tx.id,
+                    accountId: tx.account_id,
+                    installationId: tx.installation_id,
+                    unsettledTokens: tx.amount
+                };
             }
         }
 
@@ -134,16 +139,16 @@ class SyncQueue {
                     WHERE id = ?
                 `).run(now, item.id);
 
-                if (item.event_type === "CREDIT_TRANSACTION" && requestPayload.transaction) {
+                if (item.event_type === "CREDIT_TRANSACTION" && requestPayload.transactionId) {
                     db.prepare(`UPDATE credit_transactions SET status = 'SYNCED', synced_at = ? WHERE id = ?`)
-                      .run(now, requestPayload.transaction.id);
+                      .run(now, requestPayload.transactionId);
                     
                     // If the server returned the latest balance, update it
-                    if (result.data && result.data.currentBalance !== undefined) {
+                    if (result.data && result.data.credits !== undefined) {
                         const state = db.prepare('SELECT account_id, installation_id FROM credit_state WHERE id = 1').get();
                         if (state) {
                             const creditManager = require('../credits/creditManager');
-                            creditManager.updateServerState(state.account_id, state.installation_id, result.data.currentBalance);
+                            creditManager.updateServerState(state.account_id, state.installation_id, result.data.credits);
                         }
                     }
                 }

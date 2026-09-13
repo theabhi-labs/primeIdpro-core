@@ -1,0 +1,19 @@
+{
+  "id": "synced-corporate-v1",
+  "name": "Corporate Sync Premium",
+  "category": "corporate",
+  "version": "1.0.0",
+  "scalable": true,
+  "size": {
+    "width": 53.98,
+    "height": 85.60,
+    "unit": "mm",
+    "orientation": "vertical"
+  },
+  "sides": ["front"],
+  "fields": [
+    {"id": "name", "label": "Full Name", "type": "text", "required": true},
+    {"id": "employeeId", "label": "Employee ID", "type": "text", "required": true},
+    {"id": "department", "label": "Department", "type": "text", "required": false}
+  ]
+}

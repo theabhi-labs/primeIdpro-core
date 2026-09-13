@@ -20,7 +20,9 @@ class Database:
             )
             await self.client.admin.command("ping")
             logger.info(f"✅ Connected to MongoDB ({self.db_name})")
-            return self.get_database()
+            db_inst = self.get_database()
+            await self._create_indexes(db_inst)
+            return db_inst
         except Exception as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
             logger.warning("⚠️ Save/Project endpoints will return 503 until MongoDB is reachable")
@@ -38,5 +40,17 @@ class Database:
             return self.client[self.db_name]
         return None
 
+    async def _create_indexes(self, db):
+        try:
+            import pymongo
+            await db.v2_card_templates.create_index([("organization_id", pymongo.ASCENDING)])
+            await db.v2_card_projects.create_index([("id", pymongo.ASCENDING), ("organization_id", pymongo.ASCENDING)])
+            await db.v2_card_records.create_index([("project_id", pymongo.ASCENDING), ("organization_id", pymongo.ASCENDING)])
+            await db.v2_collection_links.create_index([("token_hash", pymongo.ASCENDING)], unique=True)
+            await db.v2_collection_links.create_index([("project_id", pymongo.ASCENDING)])
+            await db.v2_card_jobs.create_index([("status", pymongo.ASCENDING), ("heartbeat_at", pymongo.ASCENDING)])
+            logger.info("✅ V2 MongoDB indexes verified")
+        except Exception as e:
+            logger.error(f"❌ Failed to create V2 indexes: {e}")
 
 db = Database()
