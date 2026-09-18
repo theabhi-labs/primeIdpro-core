@@ -1,0 +1,9 @@
+{
+    "autoInvertDarkPages": true,
+    "darkThresholdPercent": 65,
+    "duplexSupported": false,
+    "defaultCombineMode": "two-page",
+    "printMode": "manual-approve",
+    "sessionExpiryMinutes": 15,
+    "printerName": "Microsoft Print to PDF"
+}

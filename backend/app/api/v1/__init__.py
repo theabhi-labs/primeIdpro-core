@@ -15,8 +15,6 @@ from app.api.v1.project import router as project_router
 print("[api_v1] 5. importing session", flush=True)
 from app.api.v1.session import router as session_router
 
-print("[api_v1] 6. importing card_studio", flush=True)
-from app.api.v1.card_studio import card_router
 
 print("[api_v1] 7. importing credits", flush=True)
 from app.api.v1.credits import credit_router
@@ -33,9 +31,12 @@ api_v1_router.include_router(process_router)
 api_v1_router.include_router(sheet_router)
 api_v1_router.include_router(project_router)
 api_v1_router.include_router(session_router)
-api_v1_router.include_router(card_router)
+
 api_v1_router.include_router(credit_router)
 api_v1_router.include_router(auth_router)
+
+from app.api.v1.print_studio import router as print_studio_router
+api_v1_router.include_router(print_studio_router)
 
 __all__ = ["api_v1_router"]
 

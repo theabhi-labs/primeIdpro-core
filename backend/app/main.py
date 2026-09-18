@@ -78,12 +78,7 @@ async def lifespan(app: FastAPI):
     app.state.mongo_db = mongo_db
     app.state.mongo_client = db.client
 
-    # Recover stale generation jobs (Phase 4 Hardening)
-    try:
-        from app.services.v2_cards.generation_service import recover_stale_jobs
-        await recover_stale_jobs(mongo_db)
-    except Exception as e:
-        logger.error(f"Failed to run stale job recovery: {str(e)}")
+    # (V2 related generation job recovery removed)
 
     # Preload AI models in background to eliminate 1st photo delay
     import asyncio
@@ -127,11 +122,7 @@ app.mount("/processed", StaticFiles(directory=PROCESSED_DIR), name="processed")
 # ========== API ROUTERS ==========
 app.include_router(api_v1_router, prefix="/api/v1")
 
-# V2 Router
-from app.api.v2.cards.cards import cards_v2_router
-from app.api.v2.cards.generation import generation_router
-app.include_router(cards_v2_router, prefix="/api/v2/cards", tags=["Card Studio V2"])
-app.include_router(generation_router, prefix="/api/v2/cards")
+
 # Prime ID Pro v3.2.0 with Universal Card Studio & Credit Wallet
 
 

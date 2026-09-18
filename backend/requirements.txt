@@ -33,3 +33,8 @@ python-json-logger==2.0.7
 
 # Production
 gunicorn==21.2.0
+
+# Print Studio
+pytesseract==0.3.10
+pymupdf==1.23.26
+pywin32==306

@@ -55,9 +55,19 @@ class OnlineJobAdapter {
         };
 
         // Determine job items
-        const rawItems = Array.isArray(centralJob.items) && centralJob.items.length > 0
-            ? centralJob.items
-            : [{
+        let rawItems = [];
+        if (Array.isArray(centralJob.items) && centralJob.items.length > 0) {
+            rawItems = centralJob.items;
+        } else if (Array.isArray(centralJob.photos) && centralJob.photos.length > 0) {
+            rawItems = centralJob.photos.map((p, idx) => ({
+                photoIndex: idx + 1,
+                downloadUrl: p.downloadUrl || p.photoUrl || p.url,
+                originalFileName: p.originalFileName || `document_${idx + 1}.jpg`,
+                copies: p.copies || 1,
+                backgroundColor: "#FFFFFF"
+            }));
+        } else {
+            rawItems = [{
                 photoIndex: 1,
                 downloadUrl: centralJob.temporaryPhotoUrl || centralJob.photoUrl,
                 originalFileName: "photo.jpg",
@@ -65,10 +75,14 @@ class OnlineJobAdapter {
                 backgroundColor: centralJob.backgroundColor || "#FFFFFF",
                 cropSettings: centralJob.cropSettings
             }];
+        }
+
+        const isDocPrint = centralJob.serviceType === "PRINT_DOCUMENT" || centralJob.serviceType === "ID_CARD";
+        const jobType = isDocPrint ? JOB_TYPES.ID_CARD : JOB_TYPES.PHOTO;
 
         // Create local job
         const localJob = jobEngine.createJob({
-            type: JOB_TYPES.PHOTO,
+            type: jobType,
             source: JOB_SOURCES.ONLINE,
             serverJobId: String(serverJobId),
             orderId: centralJob.orderId ? String(centralJob.orderId) : null,
@@ -76,7 +90,7 @@ class OnlineJobAdapter {
                 jobCode: centralJob.jobCode,
                 customerName: centralJob.customerName,
                 customerPhone: centralJob.customerPhone,
-                serviceType: centralJob.serviceType || "PASSPORT_PHOTO",
+                serviceType: centralJob.serviceType || (isDocPrint ? "PRINT_DOCUMENT" : "PASSPORT_PHOTO"),
                 templateId: template.id,
                 templateName: template.name,
                 paperSize,

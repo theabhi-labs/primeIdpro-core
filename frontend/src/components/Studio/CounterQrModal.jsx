@@ -66,24 +66,24 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
       </head>
       <body>
         <div class="poster">
-          <div class="badge">📷 Instant Passport Photo</div>
-          <h1>Scan to Send Your Photo</h1>
-          <p class="sub">Scan with your mobile camera, take or pick photo, and get instant 300 DPI prints at the counter!</p>
+          <div class="badge">📷 Passport Photos • 📄 ID Cards & Documents</div>
+          <h1>Scan to Print Photos & Documents</h1>
+          <p class="sub">Scan with your mobile camera to upload Passport Photos, Aadhaar / PAN Cards, or PDF documents for instant 300 DPI prints at this counter!</p>
           <div class="qr-box">
             <img src="${qrCodeImgUrl}" alt="Counter QR Code" />
           </div>
           <div class="steps">
             <div class="step-item">
               <div class="step-num">Step 1</div>
-              <div class="step-txt">📱 Scan QR with Camera / Google Lens</div>
+              <div class="step-txt">📱 Scan QR with Mobile Camera / Lens</div>
             </div>
             <div class="step-item">
               <div class="step-num">Step 2</div>
-              <div class="step-txt">📸 Select portrait & photo copies</div>
+              <div class="step-txt">📸 Pick Passport Photo OR 📄 Upload ID / PDF</div>
             </div>
             <div class="step-item">
               <div class="step-num">Step 3</div>
-              <div class="step-txt">⚡ Receive your print in seconds!</div>
+              <div class="step-txt">⚡ Receive your crystal-clear 300 DPI print!</div>
             </div>
           </div>
           <div class="center-info">
@@ -136,7 +136,7 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
         {/* Modal Body */}
         <div className="p-6 flex flex-col items-center text-center">
           <p className="text-xs text-slate-300 max-w-sm mb-4">
-            Customers can scan this QR code with their mobile phone camera to upload their passport photos directly to this desk!
+            Customers can scan this QR code with their mobile phone camera to upload <strong className="text-cyan-400">Passport Photos</strong> or <strong className="text-cyan-400">ID Cards & Documents</strong> directly to this desk!
           </p>
 
           {/* QR Code Container */}
@@ -162,15 +162,15 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
               </div>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">2. Upload Photo</div>
+              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">2. Select Service</div>
               <div className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
-                Takes selfie or picks photo
+                Passport Photo or ID / PDF
               </div>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">3. Print Desk</div>
+              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">3. Auto Print</div>
               <div className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
-                Order lands here in top bar!
+                Appears on desk instantly
               </div>
             </div>
           </div>

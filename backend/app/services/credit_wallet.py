@@ -174,6 +174,7 @@ def _sync_sqlite_device_state(center_id: str, device_id: str, center_name: str, 
         
         # Match Electron's config.js DB_PATH resolution
         if sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
+            # pyrefly: ignore [no-matching-overload]
             sqlite_path = os.path.join(os.environ.get("LOCALAPPDATA"), "PrimeIdPro", "data", "primeidpro.sqlite")
         else:
             appdata = os.environ.get("USERPROFILE") or os.path.expanduser("~")

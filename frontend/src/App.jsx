@@ -4,13 +4,12 @@ import PhotoCopyEditor from './components/Studio/PhotoCopyEditor';
 import PhotoEditor from './components/Studio/PhotoEditor';
 import BulkCopyModal from './components/Studio/BulkCopyModal';
 import PrintSettingsModal from './components/Studio/PrintSettingsModal';
+import PrintStudioWorkspace from './components/PrintStudio/PrintStudioWorkspace';
 import usePhotoProcessing from './hooks/usePhotoProcessing';
 import usePrintSettings from './hooks/usePrintSettings';
 import Toast from './components/Common/Toast';
 import LoadingSpinner from './components/Common/LoadingSpinner';
-import CardStudioRoot from './components/CardStudio/CardStudioRoot';
-import CardStudioV2Root from './components/CardStudioV2/CardStudioV2Root';
-import PublicCollectionForm from './components/CardStudioV2/PublicCollectionForm';
+
 import RecommendationBanner from './components/Credits/RecommendationBanner';
 import CreditMeterBadge from './components/Credits/CreditMeterBadge';
 import ConnectOnlineModal from './components/Credits/ConnectOnlineModal';
@@ -55,7 +54,8 @@ import {
   Trash2,
   Menu,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Printer
 } from 'lucide-react';
 
 function App() {
@@ -915,71 +915,28 @@ function App() {
               )}
             </button>
 
-            {/* Inactive links */}
-            <div 
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl text-slate-500 hover:text-slate-400 hover:bg-slate-900/40 font-medium text-sm transition-all cursor-not-allowed opacity-60`}
-              title="ATS Resumes (Soon)"
-            >
-              <FileText className="w-5 h-5 shrink-0" />
-              {!isSidebarCollapsed && (
-                <>
-                  <span>ATS Resumes</span>
-                  <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800">Soon</span>
-                </>
-              )}
-            </div>
-
-            {/* Card Studio link */}
+            {/* Print Studio link */}
             <button
               type="button"
-              onClick={() => setCurrentWorkspace('card-studio')}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
-                currentWorkspace === 'card-studio'
+              onClick={() => setCurrentWorkspace('print-studio')}
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer mt-2 ${
+                currentWorkspace === 'print-studio'
                   ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
               }`}
-              title="Card Studio V1"
+              title="Print Studio"
             >
-              <CreditCard className="w-5 h-5 shrink-0" />
+              <Printer className="w-5 h-5 shrink-0" />
               {!isSidebarCollapsed && (
                 <>
-                  <span>Card Studio V1</span>
-                  {currentWorkspace === 'card-studio' ? (
+                  <span>Print Studio</span>
+                  {currentWorkspace === 'print-studio' && (
                     <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
-                  ) : (
-                    <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500 border border-slate-800 font-bold">
-                      v1.0
-                    </span>
                   )}
                 </>
               )}
             </button>
 
-            {/* Card Studio V2 link */}
-            <button
-              type="button"
-              onClick={() => setCurrentWorkspace('card-studio-v2')}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
-                currentWorkspace === 'card-studio-v2'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
-              }`}
-              title="Card Studio V2"
-            >
-              <Sparkles className="w-5 h-5 shrink-0 text-cyan-400" />
-              {!isSidebarCollapsed && (
-                <>
-                  <span>Card Studio V2</span>
-                  {currentWorkspace === 'card-studio-v2' ? (
-                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
-                  ) : (
-                    <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-cyan-500/10 rounded text-cyan-400 border border-cyan-500/20 font-bold">
-                      NEW
-                    </span>
-                  )}
-                </>
-              )}
-            </button>
           </nav>
 
         </div>
@@ -990,15 +947,6 @@ function App() {
       </aside>
 
       {/* ================= 2. MAIN CONTENT AREA (RIGHT SIDE) ================= */}
-      {currentWorkspace === 'card-studio' ? (
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-          <CardStudioRoot setToast={setToast} />
-        </main>
-      ) : currentWorkspace === 'card-studio-v2' ? (
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50">
-          <CardStudioV2Root />
-        </main>
-      ) : (
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900/40 relative">
 
 
@@ -1007,6 +955,7 @@ function App() {
         <div className="absolute bottom-0 left-1/3 w-[400px] h-[250px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" />
 
         {/* --- Top Control & Header Bar --- */}
+        {currentWorkspace !== 'print-studio' && (
         <header className="h-14 px-6 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/60 backdrop-blur-md shrink-0 z-10">
           
           {/* Left: Passport Country Standard Dropdown & AI Mode */}
@@ -1076,8 +1025,12 @@ function App() {
             </button>
           </div>
         </header>
+        )}
 
-        {/* --- Main Full-Width Workspace --- */}
+        {currentWorkspace === 'print-studio' ? (
+          <PrintStudioWorkspace isSidebarCollapsed={isSidebarCollapsed} />
+        ) : (
+        <>
         <div 
           className="flex-1 overflow-hidden p-6 flex flex-col min-h-0"
           onDragOver={handleDragOver}
@@ -1289,10 +1242,10 @@ function App() {
 
           </div>
         </div>
-
+        </>
+        )}
 
       </main>
-      )}
 
 
       {/* ================= MODALS & OVERLAYS (PRESERVED) ================= */}
