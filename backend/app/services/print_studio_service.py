@@ -388,33 +388,87 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
 
 def group_documents(documents: list) -> list:
     """
-    Links front and back pairs by their groupId or extractedCode.
+    Links front and back pairs by:
+    1. Pre-assigned groupId (from single-image dual-card auto-split)
+    2. Extracted Aadhaar/PAN code matching
+    3. Positional/Sequential matching for batch uploads (e.g. 5 fronts + 5 backs)
     """
-    code_to_group = {}
+    # Step 1: Ensure basic docTypeLabel and side
     for doc in documents:
-        if not doc.get("groupId"):
-            doc["groupId"] = str(uuid.uuid4())[:8]
-            
-        code = doc.get("extractedCode")
-        if code and doc.get("side") == "front":
-            code_to_group[code] = doc["groupId"]
-            
-    for doc in documents:
-        code = doc.get("extractedCode")
-        if doc.get("side") == "back":
-            if code and code in code_to_group:
-                doc["groupId"] = code_to_group[code]
-                doc["status"] = "matched"
-            elif doc.get("groupId") and any(d.get("groupId") == doc["groupId"] and d.get("side") == "front" for d in documents):
-                doc["status"] = "matched"
-            else:
-                doc["status"] = "unmatched"
-        else:
-            doc["status"] = "matched"
-            
         if not doc.get("docTypeLabel"):
             doc["docTypeLabel"] = "ID Card" if doc.get("jobType") == "id-card" else "General Document"
+
+    # Step 2: Check pre-matched groups (where groupId is already shared between a front and back)
+    group_front_counts = {}
+    group_back_counts = {}
+    for doc in documents:
+        gid = doc.get("groupId")
+        if gid:
+            if doc.get("side") == "front":
+                group_front_counts[gid] = group_front_counts.get(gid, 0) + 1
+            elif doc.get("side") == "back":
+                group_back_counts[gid] = group_back_counts.get(gid, 0) + 1
+
+    # Step 3: Code-based matching (Aadhaar / PAN numbers)
+    code_to_group = {}
+    for doc in documents:
+        code = doc.get("extractedCode")
+        gid = doc.get("groupId")
+        if code and doc.get("side") == "front":
+            if not gid:
+                gid = str(uuid.uuid4())[:8]
+                doc["groupId"] = gid
+            code_to_group[code] = gid
+
+    for doc in documents:
+        code = doc.get("extractedCode")
+        if doc.get("side") == "back" and code and code in code_to_group:
+            doc["groupId"] = code_to_group[code]
+            doc["status"] = "matched"
+
+    # Step 4: Find remaining unassigned/unpaired fronts and backs
+    unpaired_fronts = []
+    unpaired_backs = []
+
+    for doc in documents:
+        gid = doc.get("groupId")
+        side = doc.get("side")
         
+        # Check if already part of a valid front+back pair
+        is_already_paired = gid and group_front_counts.get(gid, 0) >= 1 and group_back_counts.get(gid, 0) >= 1
+        
+        if not is_already_paired:
+            if side == "front":
+                unpaired_fronts.append(doc)
+            elif side == "back":
+                unpaired_backs.append(doc)
+            else:
+                # General document or unclassified card
+                if not gid:
+                    doc["groupId"] = str(uuid.uuid4())[:8]
+                doc["status"] = "matched"
+
+    # Step 5: Sequential pairing for remaining batch cards (e.g. 5 fronts and 5 backs)
+    pair_count = min(len(unpaired_fronts), len(unpaired_backs))
+    for i in range(pair_count):
+        new_gid = str(uuid.uuid4())[:8]
+        unpaired_fronts[i]["groupId"] = new_gid
+        unpaired_fronts[i]["status"] = "matched"
+        unpaired_backs[i]["groupId"] = new_gid
+        unpaired_backs[i]["status"] = "matched"
+
+    # Any leftover fronts can be printed as single cards
+    for f_doc in unpaired_fronts[pair_count:]:
+        if not f_doc.get("groupId"):
+            f_doc["groupId"] = str(uuid.uuid4())[:8]
+        f_doc["status"] = "matched"
+
+    # Any leftover backs without a front become unmatched (asking operator to pair)
+    for b_doc in unpaired_backs[pair_count:]:
+        if not b_doc.get("groupId"):
+            b_doc["groupId"] = str(uuid.uuid4())[:8]
+        b_doc["status"] = "unmatched"
+
     return documents
 
 def analyze_invert_safety(file_path: str) -> bool:
