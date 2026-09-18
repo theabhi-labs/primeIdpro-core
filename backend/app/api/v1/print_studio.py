@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
 import uuid
 import os
@@ -21,14 +21,19 @@ router = APIRouter(prefix="/print-studio", tags=["Print Studio"])
 jobs_db = {}
 
 @router.post("/upload-manual")
-async def upload_manual(request: Request, files: List[UploadFile] = File(...)):
+async def upload_manual(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    customer_label: Optional[str] = Form(None)
+):
     """
-    Operator manual upload from desktop.
+    Operator manual upload from desktop or incoming QR kiosk order loading.
     Creates a new job automatically with pending-review status.
     Auto-detects and splits combined front/back cards with 300 DPI quality enhancement!
     """
     job_id = str(uuid.uuid4())
-    job = PrintJob(id=job_id, customerLabel="Manual Upload", documents=[], status="pending-review", combineMode="side-by-side")
+    default_label = customer_label.strip() if (customer_label and customer_label.strip()) else "Manual Upload"
+    job = PrintJob(id=job_id, customerLabel=default_label, documents=[], status="pending-review", combineMode="side-by-side")
     
     face_cascade = getattr(request.app.state, "face_cascade", None)
     
@@ -61,7 +66,7 @@ async def upload_manual(request: Request, files: List[UploadFile] = File(...)):
             )
             job.documents.append(doc)
             
-            if card.get("docTypeLabel") and card.get("docTypeLabel") != "General Document":
+            if not customer_label and card.get("docTypeLabel") and card.get("docTypeLabel") != "General Document":
                 job.customerLabel = f"{card['docTypeLabel']} Print"
         
     # Group documents

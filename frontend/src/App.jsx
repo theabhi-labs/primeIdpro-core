@@ -1028,7 +1028,22 @@ function App() {
         )}
 
         {currentWorkspace === 'print-studio' ? (
-          <PrintStudioWorkspace isSidebarCollapsed={isSidebarCollapsed} />
+          <PrintStudioWorkspace 
+            isSidebarCollapsed={isSidebarCollapsed}
+            onlineJobs={onlineJobs}
+            jobThumbnails={jobThumbnails}
+            deviceState={{
+              ...deviceState,
+              centerCode: centerCode || deviceState?.centerCode || null,
+              centerName: connectedAccount || deviceState?.centerName || 'Counter Desk'
+            }}
+            onRefreshOnlineJobs={handleManualRefreshQueue}
+            onOpenConnectModal={() => openConnectModal('Please connect your PrimeIDPro.online account to activate live Counter QR sync.')}
+            onOpenQrModal={() => setShowCounterQrModal(true)}
+            onDismissOnlineJob={handleDismissOnlineJob}
+            onClearOnlineQueue={handleClearAllOnlineJobs}
+            onJobStatusUpdated={fetchOnlineJobs}
+          />
         ) : (
         <>
         <div 

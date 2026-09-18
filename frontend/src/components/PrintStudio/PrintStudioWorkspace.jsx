@@ -5,13 +5,27 @@ import {
   Layers, Sliders, ChevronRight, Check, Sparkles, FileCheck, Info, Download
 } from 'lucide-react';
 import api from '../../services/api';
+import PrintStudioQrGallery from './PrintStudioQrGallery';
 
-const PrintStudioWorkspace = ({ isSidebarCollapsed }) => {
+const PrintStudioWorkspace = ({
+  isSidebarCollapsed,
+  onlineJobs = [],
+  jobThumbnails = {},
+  deviceState = null,
+  onRefreshOnlineJobs,
+  onOpenConnectModal,
+  onOpenQrModal,
+  onDismissOnlineJob,
+  onClearOnlineQueue,
+  onJobStatusUpdated,
+}) => {
   const [jobs, setJobs] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
   const [actionLoading, setActionLoading] = useState({});
   const [toastMessage, setToastMessage] = useState(null);
+  const [loadingOnlineJobId, setLoadingOnlineJobId] = useState(null);
+  const [isRefreshingQueue, setIsRefreshingQueue] = useState(false);
   
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -237,6 +251,171 @@ const PrintStudioWorkspace = ({ isSidebarCollapsed }) => {
     }
   };
 
+  const resolveCloudPhotoUrl = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const trimmed = url.trim();
+    if (trimmed.startsWith('data:') || trimmed.startsWith('blob:') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    const base = 'https://primeidpro-central-platform.onrender.com';
+    if (trimmed.startsWith('/')) {
+      return `${base}${trimmed}`;
+    }
+    return `${base}/${trimmed}`;
+  };
+
+  const handleRefreshQueue = async () => {
+    setIsRefreshingQueue(true);
+    try {
+      if (onRefreshOnlineJobs) {
+        await onRefreshOnlineJobs();
+      }
+    } finally {
+      setTimeout(() => setIsRefreshingQueue(false), 600);
+    }
+  };
+
+  const handleLoadOnlineJob = async (job) => {
+    if (!job) return;
+    setLoadingOnlineJobId(job.id);
+    const jobMeta = job.metadata || {};
+    const rawCentral = jobMeta.rawCentralJob || {};
+    const customerName = jobMeta.customerName || rawCentral.customerName || 'Customer';
+    const orderCode = String(jobMeta.jobCode || job.order_id || job.id).slice(-6).toUpperCase();
+
+    showToast(`⚡ Loading & analyzing documents for ${customerName}...`, 'info');
+
+    try {
+      const filesToUpload = [];
+
+      // 1. Try loading via Electron IPC jobs:loadFiles
+      if (window.primeIdPro?.jobs?.loadFiles) {
+        try {
+          const res = await window.primeIdPro.jobs.loadFiles(job.id);
+          if (res?.success && Array.isArray(res.files) && res.files.length > 0) {
+            for (const f of res.files) {
+              const dataUrl = f.dataUrl;
+              if (dataUrl && dataUrl.startsWith('data:')) {
+                const arr = dataUrl.split(',');
+                const mime = arr[0].match(/:(.*?);/)?.[1] || f.mimeType || 'image/jpeg';
+                const bstr = atob(arr[1]);
+                let n = bstr.length;
+                const u8arr = new Uint8Array(n);
+                while (n--) {
+                  u8arr[n] = bstr.charCodeAt(n);
+                }
+                const ext = mime.includes('pdf') ? 'pdf' : mime.includes('png') ? 'png' : 'jpg';
+                const filename = f.filename || `qr_doc_${orderCode}_${filesToUpload.length + 1}.${ext}`;
+                filesToUpload.push(new File([u8arr], filename, { type: mime }));
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('loadFiles failed, falling back:', e);
+        }
+      }
+
+      // 2. Fallback: Try jobs:loadPhoto if no files yet
+      if (filesToUpload.length === 0 && window.primeIdPro?.jobs?.loadPhoto) {
+        try {
+          const res = await window.primeIdPro.jobs.loadPhoto(job.id);
+          if (res?.success && res.dataUrl) {
+            const arr = res.dataUrl.split(',');
+            const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) {
+              u8arr[n] = bstr.charCodeAt(n);
+            }
+            filesToUpload.push(new File([u8arr], `qr_doc_${orderCode}.jpg`, { type: mime }));
+          }
+        } catch (e) {}
+      }
+
+      // 3. Fallback: Fetch directly from cloud URL if local IPC staging didn't provide files
+      if (filesToUpload.length === 0) {
+        const rawJob = await window.primeIdPro?.jobs?.get(job.id);
+        const items = rawJob?.job?.items || job.items || [];
+        const rawItems = Array.isArray(rawCentral.items) && rawCentral.items.length > 0
+          ? rawCentral.items
+          : (Array.isArray(rawCentral.photos) && rawCentral.photos.length > 0 ? rawCentral.photos : []);
+
+        const urlsToFetch = [];
+        if (rawItems.length > 0) {
+          rawItems.forEach(it => {
+            const u = it.downloadUrl || it.photoUrl || it.url;
+            if (u) urlsToFetch.push(u);
+          });
+        } else if (items.length > 0) {
+          items.forEach(it => {
+            const u = it.downloadUrl || it.photoUrl;
+            if (u) urlsToFetch.push(u);
+          });
+        }
+        if (urlsToFetch.length === 0) {
+          const fallbackUrl = jobThumbnails[job.id] || jobMeta.temporaryPhotoUrl || rawCentral.temporaryPhotoUrl || rawCentral.photoUrl;
+          if (fallbackUrl) urlsToFetch.push(fallbackUrl);
+        }
+
+        for (let i = 0; i < urlsToFetch.length; i++) {
+          const rawUrl = urlsToFetch[i];
+          const remoteUrl = resolveCloudPhotoUrl(rawUrl);
+          if (remoteUrl) {
+            const resp = await fetch(remoteUrl);
+            if (resp.ok) {
+              const blob = await resp.blob();
+              const ext = blob.type.includes('pdf') ? 'pdf' : blob.type.includes('png') ? 'png' : 'jpg';
+              filesToUpload.push(new File([blob], `qr_doc_${orderCode}_${i + 1}.${ext}`, { type: blob.type }));
+            }
+          }
+        }
+      }
+
+      if (filesToUpload.length === 0) {
+        throw new Error('No valid documents found to load from this order');
+      }
+
+      // 4. Send files to Python backend /print-studio/upload-manual
+      const formData = new FormData();
+      filesToUpload.forEach(f => formData.append('files', f));
+      formData.append('customer_label', `${customerName} (QR #${orderCode})`);
+
+      const res = await api.post('/print-studio/upload-manual', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (res.data?.success) {
+        showToast(`✨ Auto-processed ${customerName}'s documents (300 DPI layout ready)!`, 'success');
+        await fetchJobs();
+
+        // Automatically open the Review / Print Modal for this newly processed job!
+        if (res.data.job) {
+          openReviewModal(res.data.job);
+        }
+
+        // Update online job status
+        if (window.primeIdPro?.jobs?.updateStatus) {
+          await window.primeIdPro.jobs.updateStatus({
+            jobId: job.id,
+            status: 'PROCESSING',
+            processingStatus: 'READY'
+          });
+        }
+        if (onJobStatusUpdated) {
+          onJobStatusUpdated();
+        }
+      } else {
+        showToast(res.data?.detail || 'Failed to process documents', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to load & process QR job:', err);
+      showToast('Failed to load online order: ' + (err.response?.data?.detail || err.message), 'error');
+    } finally {
+      setLoadingOnlineJobId(null);
+    }
+  };
+
   const handleCombineModeToggle = async (newMode) => {
     if (!previewModal) return;
     setPreviewModal(prev => ({ ...prev, combineMode: newMode, loading: true }));
@@ -416,6 +595,21 @@ const PrintStudioWorkspace = ({ isSidebarCollapsed }) => {
           </button>
         </div>
       </header>
+
+      {/* Incoming Mobile QR Orders & Uploads Ribbon Gallery */}
+      <PrintStudioQrGallery
+        onlineJobs={onlineJobs}
+        jobThumbnails={jobThumbnails}
+        loadingJobId={loadingOnlineJobId}
+        isRefreshingQueue={isRefreshingQueue}
+        deviceState={deviceState}
+        onLoadJob={handleLoadOnlineJob}
+        onDismissJob={onDismissOnlineJob}
+        onClearQueue={onClearOnlineQueue}
+        onRefresh={handleRefreshQueue}
+        onOpenQrModal={onOpenQrModal}
+        onOpenConnectModal={onOpenConnectModal}
+      />
 
       {/* Main Content Area: Jobs Queue */}
       <div className="flex-1 overflow-y-auto rounded-2xl bg-slate-950 border border-slate-800/80 p-5 space-y-4 custom-scrollbar">

@@ -176,6 +176,92 @@ function registerIpcHandlers() {
         }
     });
 
+    ipcMain.handle("jobs:loadFiles", async (event, jobId) => {
+        try {
+            const validId = validateId(jobId);
+            const job = jobEngine.getJob(validId);
+            if (!job) return { success: false, error: "Job not found" };
+
+            const items = (job.items && job.items.length > 0) ? job.items : [];
+            const rawCentralJob = job.metadata?.rawCentralJob || {};
+            const rawItems = Array.isArray(rawCentralJob.items) && rawCentralJob.items.length > 0
+                ? rawCentralJob.items
+                : (Array.isArray(rawCentralJob.photos) && rawCentralJob.photos.length > 0
+                    ? rawCentralJob.photos
+                    : []);
+
+            const files = [];
+            const totalItemsCount = Math.max(items.length, rawItems.length, 1);
+
+            for (let idx = 0; idx < totalItemsCount; idx++) {
+                const item = items[idx] || {};
+                const rawItem = rawItems[idx] || {};
+                let localPath = item.originalPath || item.original_path;
+
+                // 1. If already staged locally and exists on disk
+                if (localPath && fs.existsSync(localPath)) {
+                    const buffer = await fs.promises.readFile(localPath);
+                    const ext = localPath.endsWith(".png") ? "png" : localPath.endsWith(".webp") ? "webp" : localPath.endsWith(".pdf") ? "pdf" : "jpeg";
+                    const mimeType = ext === "pdf" ? "application/pdf" : `image/${ext}`;
+                    const filename = path.basename(localPath) || `file_${idx + 1}.${ext}`;
+                    files.push({
+                        dataUrl: `data:${mimeType};base64,${buffer.toString("base64")}`,
+                        filename,
+                        mimeType,
+                        localPath
+                    });
+                    continue;
+                }
+
+                // 2. Try staging remote file
+                const downloadUrl =
+                    item.downloadUrl ||
+                    item.photoUrl ||
+                    item.download_url ||
+                    rawItem.downloadUrl ||
+                    rawItem.photoUrl ||
+                    rawItem.url ||
+                    (idx === 0 ? (job.metadata?.downloadUrl || job.metadata?.photoUrl || job.metadata?.temporaryPhotoUrl || rawCentralJob.temporaryPhotoUrl || rawCentralJob.photoUrl) : null);
+
+                if (downloadUrl) {
+                    try {
+                        const originalFileName = item.originalFileName || rawItem.originalFileName || rawItem.filename || `file_${idx + 1}.jpg`;
+                        const staged = await photoStager.stageRemotePhoto({
+                            downloadUrl,
+                            jobId: job.id,
+                            photoIndex: idx + 1,
+                            originalFileName
+                        });
+
+                        const db = sqliteDb.getDb();
+                        db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ? AND item_index = ?").run(staged.localPath, job.id, idx + 1);
+
+                        const buffer = await fs.promises.readFile(staged.localPath);
+                        const ext = staged.localPath.endsWith(".png") ? "png" : staged.localPath.endsWith(".webp") ? "webp" : staged.localPath.endsWith(".pdf") ? "pdf" : "jpeg";
+                        const mimeType = ext === "pdf" ? "application/pdf" : `image/${ext}`;
+                        files.push({
+                            dataUrl: `data:${mimeType};base64,${buffer.toString("base64")}`,
+                            filename: originalFileName,
+                            mimeType,
+                            localPath: staged.localPath
+                        });
+                    } catch (stageErr) {
+                        logger.error("IPC_LOAD_FILES_STAGE_ERROR", { jobId, idx, error: stageErr.message });
+                    }
+                }
+            }
+
+            if (files.length === 0) {
+                return { success: false, error: "No downloadable files found for this order" };
+            }
+
+            return { success: true, files, job: jobEngine.getJob(validId) };
+        } catch (err) {
+            logger.error("IPC_LOAD_FILES_ERROR", { jobId, error: err.message });
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle("jobs:delete", async (event, jobId) => {
         try {
             const validId = validateId(jobId);
