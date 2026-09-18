@@ -77,7 +77,17 @@ class OnlineJobAdapter {
             }];
         }
 
-        const isDocPrint = centralJob.serviceType === "PRINT_DOCUMENT" || centralJob.serviceType === "ID_CARD";
+        const isDocPrint = 
+            centralJob.serviceType === "PRINT_DOCUMENT" || 
+            centralJob.serviceType === "ID_CARD" ||
+            centralJob.serviceType === "PVC_ID_CARD" ||
+            centralJob.serviceType === "PVC_CARD" ||
+            centralJob.serviceType === "CERTIFICATE" ||
+            centralJob.serviceType === "DOCUMENT_PRINT" ||
+            centralJob.serviceType === "PRINT_STUDIO" ||
+            centralJob.type === "id-card" ||
+            centralJob.type === "general-document";
+
         const jobType = isDocPrint ? JOB_TYPES.ID_CARD : JOB_TYPES.PHOTO;
 
         // Create local job

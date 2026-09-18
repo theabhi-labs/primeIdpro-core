@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ProcessedPhotosGrid from './components/Studio/ProcessedPhotosGrid';
 import PhotoCopyEditor from './components/Studio/PhotoCopyEditor';
 import PhotoEditor from './components/Studio/PhotoEditor';
@@ -174,6 +174,43 @@ function App() {
   const [jobThumbnails, setJobThumbnails] = useState({});
   const [loadingJobId, setLoadingJobId] = useState(null);
   const [isRefreshingQueue, setIsRefreshingQueue] = useState(false);
+
+  // Categorize incoming QR orders by Studio Type
+  const isDocumentPrintJob = (job) => {
+    if (!job) return false;
+    const serviceType = String(
+      job.metadata?.serviceType || 
+      job.metadata?.rawCentralJob?.serviceType || 
+      job.serviceType || 
+      ''
+    ).toUpperCase();
+    const jobType = String(job.type || '').toUpperCase();
+    const centralType = String(job.metadata?.rawCentralJob?.type || '').toUpperCase();
+
+    return (
+      serviceType === 'PRINT_DOCUMENT' ||
+      serviceType === 'ID_CARD' ||
+      serviceType === 'PVC_ID_CARD' ||
+      serviceType === 'PVC_CARD' ||
+      serviceType === 'CERTIFICATE' ||
+      serviceType === 'DOCUMENT_PRINT' ||
+      serviceType === 'PRINT_STUDIO' ||
+      jobType === 'ID_CARD' ||
+      jobType === 'PVC_CARD' ||
+      jobType === 'CERTIFICATE' ||
+      centralType === 'DOCUMENT' ||
+      centralType === 'ID-CARD' ||
+      centralType === 'ID_CARD'
+    );
+  };
+
+  const passportOnlineJobs = useMemo(() => {
+    return onlineJobs.filter(j => !isDocumentPrintJob(j));
+  }, [onlineJobs]);
+
+  const printStudioOnlineJobs = useMemo(() => {
+    return onlineJobs.filter(j => isDocumentPrintJob(j));
+  }, [onlineJobs]);
 
   const resolveCloudPhotoUrl = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -1030,7 +1067,7 @@ function App() {
         {currentWorkspace === 'print-studio' ? (
           <PrintStudioWorkspace 
             isSidebarCollapsed={isSidebarCollapsed}
-            onlineJobs={onlineJobs}
+            onlineJobs={printStudioOnlineJobs}
             jobThumbnails={jobThumbnails}
             deviceState={{
               ...deviceState,
@@ -1055,7 +1092,7 @@ function App() {
           
           {/* Always Visible Incoming QR Code Counter Orders Gallery Ribbon */}
           <LiveKioskGallery
-            onlineJobs={onlineJobs}
+            onlineJobs={passportOnlineJobs}
             jobThumbnails={jobThumbnails}
             loadingJobId={loadingJobId}
             isRefreshingQueue={isRefreshingQueue}
