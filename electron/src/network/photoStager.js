@@ -7,10 +7,10 @@ const config = require("../config");
 const logger = require("../logging/logger");
 const cleanupManager = require("../cleanup/cleanupManager");
 
-const MAX_IMAGE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"];
+const MAX_IMAGE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB safety limit
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".pdf"];
 
-// Magic byte signatures for image validation
+// Magic byte signatures for image/document validation
 function validateImageMagicBytes(buffer) {
     if (!buffer || buffer.length < 4) return false;
 
@@ -27,6 +27,9 @@ function validateImageMagicBytes(buffer) {
 
     // BMP: BM (42 4D)
     if (buffer[0] === 0x42 && buffer[1] === 0x4D) return true;
+
+    // PDF: %PDF (25 50 44 46)
+    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) return true;
 
     return false;
 }
