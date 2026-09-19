@@ -68,13 +68,18 @@ def generate_composite(front_path: str, back_path: str, output_path: str, mode: 
             x_start = (A4_WIDTH_300DPI - id_w) // 2
             y_start = 200
             
-            if front_img is not None:
+            if front_img is not None and back_img is not None:
+                # Top Card (Front)
                 canvas[y_start:y_start+id_h, x_start:x_start+id_w] = front_img
                 cv2.rectangle(canvas, (x_start, y_start), (x_start+id_w, y_start+id_h), (210, 215, 220), 1)
-                y_start += id_h + 150
-
-            if back_img is not None:
-                canvas[y_start:y_start+id_h, x_start:x_start+id_w] = back_img
+                
+                # Bottom Card (Back)
+                y_back = y_start + id_h + 100
+                canvas[y_back:y_back+id_h, x_start:x_start+id_w] = back_img
+                cv2.rectangle(canvas, (x_start, y_back), (x_start+id_w, y_back+id_h), (210, 215, 220), 1)
+            else:
+                single_img = front_img if front_img is not None else back_img
+                canvas[y_start:y_start+id_h, x_start:x_start+id_w] = single_img
                 cv2.rectangle(canvas, (x_start, y_start), (x_start+id_w, y_start+id_h), (210, 215, 220), 1)
 
         # Save with PIL to embed 300 DPI metadata

@@ -205,33 +205,84 @@ def find_and_extract_card_boxes(img_bgr: np.ndarray) -> list:
         print(f"Error finding card boxes: {e}")
         return []
 
-def enhance_card_image(card_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638) -> np.ndarray:
+def apply_document_scanner_filter(img_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638) -> np.ndarray:
     """
-    Quality Enhancement Pipeline for 300 DPI ID Card Printing:
-    1. Lanczos4 High-Quality Interpolation to exact standard CR80 size (1011x638).
-    2. CLAHE on Luminance channel for crisp text & photos.
-    3. Unsharp Masking for sharp edge definition.
+    True Document Scanner / CamScanner style Natural Enhancement:
+    1. Perspective deskew & illumination leveling (removes room shadows, yellowish tint, gray scanner shadows).
+       - Uses Gaussian background estimation on the Value/Luminance channel.
+       - Chrominance is preserved so face colors, Tiranga (saffron/green), and official stamps stay 100% natural.
+    2. Contrast balancing & unsharp mask (for ultra-crisp 300 DPI text and QR codes).
+    3. CR80 Resize (1011x638) using Lanczos4 interpolation.
     """
     try:
-        # Resize to standard CR80 at 300 DPI
-        upscaled = cv2.resize(card_bgr, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
-        
-        # Adaptive contrast on L channel in LAB color space
-        lab = cv2.cvtColor(upscaled, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8))
-        l_enhanced = clahe.apply(l)
-        enhanced_lab = cv2.merge((l_enhanced, a, b))
+        h, w = img_bgr.shape[:2]
+        if (w, h) != (target_w, target_h):
+            img_bgr = cv2.resize(img_bgr, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+
+        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+        l_chan, a_chan, b_chan = cv2.split(lab)
+
+        bg_illum = cv2.GaussianBlur(l_chan, (55, 55), 0)
+        l_norm = np.clip((l_chan.astype(np.float32) / (bg_illum.astype(np.float32) + 1.0)) * 235.0, 0, 255).astype(np.uint8)
+
+        clahe = cv2.createCLAHE(clipLimit=1.4, tileGridSize=(8, 8))
+        l_final = clahe.apply(l_norm)
+        l_blend = cv2.addWeighted(l_final, 0.75, l_chan, 0.25, 0)
+
+        enhanced_lab = cv2.merge((l_blend, a_chan, b_chan))
         enhanced_bgr = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-        
-        # Unsharp mask for crisp high-definition text, barcodes, and photo clarity
-        gaussian = cv2.GaussianBlur(enhanced_bgr, (0, 0), sigmaX=1.2)
+
+        gaussian = cv2.GaussianBlur(enhanced_bgr, (0, 0), sigmaX=1.1)
         sharpened = cv2.addWeighted(enhanced_bgr, 1.25, gaussian, -0.25, 0)
-        
+
         return sharpened
     except Exception as e:
-        print(f"Error enhancing card image: {e}")
-        return card_bgr
+        print(f"Error in scanner filter: {e}")
+        return img_bgr
+
+def enhance_card_image(card_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638) -> np.ndarray:
+    """Wrapper that applies the natural document scanner filter at 300 DPI CR80."""
+    return apply_document_scanner_filter(card_bgr, target_w, target_h)
+
+def is_pan_card_content(text: str) -> bool:
+    """Detects if text contains PAN card indicators."""
+    if not text:
+        return False
+    t_up = text.upper()
+    if 'INCOME TAX' in t_up or 'PERMANENT ACCOUNT' in t_up or 'आयकर विभाग' in text:
+        return True
+    if re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', t_up):
+        return True
+    return False
+
+def detect_qr_code(img_bgr: np.ndarray) -> bool:
+    """Detects if an image region contains a QR code or dense 2D barcode."""
+    if img_bgr is None or img_bgr.size == 0:
+        return False
+    try:
+        detector = cv2.QRCodeDetector()
+        val, pts, _ = detector.detectAndDecode(img_bgr)
+        if pts is not None and len(pts) > 0:
+            return True
+    except Exception:
+        pass
+    try:
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 3)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        qr_like = 0
+        h, w = img_bgr.shape[:2]
+        total_area = h * w
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if 300 < area < (total_area * 0.45):
+                bx, by, bw, bh = cv2.boundingRect(cnt)
+                aspect = bw / float(bh)
+                if 0.75 <= aspect <= 1.30:
+                    qr_like += 1
+        return qr_like >= 2
+    except Exception:
+        return False
 
 def trim_card_margins(img_bgr: np.ndarray, tol: int = 240) -> np.ndarray:
     """
@@ -359,6 +410,29 @@ def check_dark_page(image_np: np.ndarray, threshold: int = 65) -> bool:
     except Exception:
         return False
 
+def is_pan_card_content(text: str, img: np.ndarray = None) -> bool:
+    """Detects if document is a PAN card via text keywords, regex, or visual cues."""
+    if text:
+        t_up = text.upper()
+        if 'INCOME TAX' in t_up or 'PERMANENT ACCOUNT' in t_up or 'आयकर' in text:
+            return True
+        if re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', t_up):
+            return True
+    
+    if img is not None:
+        try:
+            h, w = img.shape[:2]
+            # Check for blue/cyan top band characteristic of Indian PAN cards
+            top_band = img[0:int(h * 0.35), :]
+            hsv = cv2.cvtColor(top_band, cv2.COLOR_BGR2HSV)
+            blue_pixels = np.sum((hsv[:, :, 0] >= 90) & (hsv[:, :, 0] <= 130) & (hsv[:, :, 1] > 30))
+            band_area = top_band.shape[0] * top_band.shape[1]
+            if (blue_pixels / max(1, band_area)) > 0.08 or blue_pixels > 1500:
+                return True
+        except Exception:
+            pass
+    return False
+
 DOC_TYPE_LABELS = {
     "UIDAI": "Aadhaar Card",
     "AADHAAR": "Aadhaar Card",
@@ -371,25 +445,46 @@ DOC_TYPE_LABELS = {
     "TRANSPORT": "Driving License"
 }
 
-def get_doc_type_label(text: str) -> str:
-    """Matches OCR text against known keywords to return a label."""
-    if not text:
-        return "ID Card"
-    text_up = text.upper()
-    for key, label in DOC_TYPE_LABELS.items():
-        if key in text_up:
-            return label
+def get_doc_type_label(text: str, img: np.ndarray = None) -> str:
+    """Matches OCR text or visual color cues against known ID card types."""
+    if text:
+        text_up = text.upper()
+        for key, label in DOC_TYPE_LABELS.items():
+            if key in text_up:
+                return label
+        if 'आधार' in text or 'UIDAI' in text_up or 'UNIQUE IDENTIFICATION' in text_up:
+            return "Aadhaar Card"
+        if 'निर्वाचन' in text or 'ELECTION' in text_up or 'VOTER' in text_up:
+            return "Voter ID"
+        if 'आयकर' in text or 'INCOME TAX' in text_up or 'PERMANENT ACCOUNT' in text_up or re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', text_up):
+            return "PAN Card"
+
+    if img is not None:
+        try:
+            h, w = img.shape[:2]
+            top_band = img[0:int(h * 0.35), :]
+            hsv = cv2.cvtColor(top_band, cv2.COLOR_BGR2HSV)
+            # Tricolor check (Aadhaar)
+            green = np.sum((hsv[:, :, 0] >= 35) & (hsv[:, :, 0] <= 85) & (hsv[:, :, 1] > 30))
+            saffron = np.sum((hsv[:, :, 0] >= 5) & (hsv[:, :, 0] <= 25) & (hsv[:, :, 1] > 50))
+            if green > 1000 and saffron > 1000:
+                return "Aadhaar Card"
+            # Blue band check (PAN)
+            blue = np.sum((hsv[:, :, 0] >= 90) & (hsv[:, :, 0] <= 130) & (hsv[:, :, 1] > 30))
+            if blue > 2000:
+                return "PAN Card"
+        except Exception:
+            pass
+
     return "ID Card"
 
 def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None) -> list[dict]:
     """
     Core Processor:
-    1. For camera/mobile uploads on textured surfaces (bedsheet, table, red cloth), automatically
-       finds card contours, extracts quadrilateral with perspective correction, removes
-       background, corrects orientation, and enhances to 300 DPI CR80 standard.
-    2. For dual-card photos or scans (front and back in 1 image), automatically splits
-       both, matches them, and assigns the same groupId.
-    3. Handles multi-page PDFs and standard documents.
+    1. Scans images with 300 DPI Document Scanner Filter (natural skin tone, clear white leveling).
+    2. Detects 2-in-1 Dual Card scans (e-Aadhaar, top/bottom stacked, side-by-side) and auto-splits into Front & Back.
+    3. PAN Card Protection: NEVER splits a single PAN card across its QR code.
+    4. Automatically enhances and packages documents for precision CR80 300 DPI print layout.
     """
     ext = os.path.splitext(file_path)[1].lower()
     
@@ -442,19 +537,62 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
     aspect_ratio = w / h if h > 0 else 1.0
     group_id = str(uuid.uuid4())[:8]
 
-    # STEP 1: Smart Card Contour & Edge Detection on Camera/Scan Photos
-    card_boxes = find_and_extract_card_boxes(img)
+    # Pre-extract OCR text to check for PAN Card or Govt ID types
+    full_code, full_text = extract_id_code(img)
+    is_pan = is_pan_card_content(full_text, img) or is_pan_card_content(full_code or "", img)
 
+    # =========================================================================
+    # SPECIAL CASE 1: PAN CARD (PROTECTED FROM FALSE SPLITTING)
+    # A PAN card is a single-sided card having photo on the left and QR code on the right.
+    # It must NEVER be sliced into front/back halves.
+    # =========================================================================
+    if is_pan:
+        card_boxes = find_and_extract_card_boxes(img)
+        if len(card_boxes) >= 1:
+            warped = four_point_transform(img, card_boxes[0])
+            wh, ww = warped.shape[:2]
+            warped = warped[int(wh * 0.02):int(wh * 0.98), int(ww * 0.02):int(ww * 0.98)]
+            oriented = auto_orient_card(warped, face_cascade)
+            enhanced = apply_document_scanner_filter(oriented)
+            low_conf = False
+        else:
+            trimmed = trim_card_margins(img)
+            oriented = auto_orient_card(trimmed, face_cascade)
+            enhanced = apply_document_scanner_filter(oriented)
+            low_conf = True
+
+        doc_id = str(uuid.uuid4())
+        save_name = f"{doc_id}.jpg"
+        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+        return [{
+            "id": doc_id,
+            "save_name": save_name,
+            "fileType": "image",
+            "jobType": "id-card",
+            "docTypeLabel": "PAN Card",
+            "side": "front",
+            "groupId": group_id,
+            "extractedCode": full_code,
+            "extractedText": full_text,
+            "isDarkPage": check_dark_page(enhanced),
+            "pageCount": 1,
+            "status": "matched",
+            "lowConfidenceCrop": low_conf
+        }]
+
+    # =========================================================================
+    # CASE 2: CONTOUR-DETECTED DUAL CARDS (2 distinct card bounding boxes found)
+    # =========================================================================
+    card_boxes = find_and_extract_card_boxes(img)
     if len(card_boxes) == 2:
-        # 2 cards detected in the photo (e.g. Front & Back photographed together on table/bed/cloth)
         cards = []
         for i, box in enumerate(card_boxes):
             warped = four_point_transform(img, box)
             wh, ww = warped.shape[:2]
-            # Shave 2.5% outer border to eliminate background remnants
-            warped = warped[int(wh * 0.025):int(wh * 0.975), int(ww * 0.025):int(ww * 0.975)]
+            warped = warped[int(wh * 0.02):int(wh * 0.98), int(ww * 0.02):int(ww * 0.98)]
             oriented = auto_orient_card(warped, face_cascade)
-            enhanced = enhance_card_image(oriented)
+            enhanced = apply_document_scanner_filter(oriented)
             has_face = detect_face(enhanced, face_cascade)
             code, text = extract_id_code(enhanced)
             cards.append({"img": enhanced, "has_face": has_face, "code": code, "text": text})
@@ -464,21 +602,17 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
         else:
             front_info, back_info = cards[0], cards[1]
 
-        # pyrefly: ignore [unsupported-operation]
         combined_text = (front_info["text"] or "") + " " + (back_info["text"] or "")
-        # pyrefly: ignore [bad-argument-type]
         doc_label = get_doc_type_label(combined_text)
         extracted_code = front_info["code"] or back_info["code"]
 
         front_id = str(uuid.uuid4())
         front_save_name = f"{front_id}_front.jpg"
-        # pyrefly: ignore [no-matching-overload]
-        cv2.imwrite(os.path.join(upload_dir, front_save_name), front_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 95])
+        cv2.imwrite(os.path.join(upload_dir, front_save_name), front_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 96])
 
         back_id = str(uuid.uuid4())
         back_save_name = f"{back_id}_back.jpg"
-        # pyrefly: ignore [no-matching-overload]
-        cv2.imwrite(os.path.join(upload_dir, back_save_name), back_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 95])
+        cv2.imwrite(os.path.join(upload_dir, back_save_name), back_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 96])
 
         return [
             {
@@ -513,223 +647,222 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             }
         ]
 
-    elif len(card_boxes) == 1:
-        # Single card cleanly detected on photo background (e.g. camera photo on bed/table/cloth)
+    # =========================================================================
+    # CASE 3: 2-in-1 DUAL CARD IMAGE (e-Aadhaar / Stacked or Side-by-Side Dual Scan)
+    # Check if a single image contains both Front (with face/header) and Back (with QR/address)
+    # =========================================================================
+    # 3A: Vertical Split Check (Front on Top, Back on Bottom — e.g. standard e-Aadhaar printout)
+    if h > 100:
+        split_y = int(h * 0.50)
+        top_half = img[0:split_y, :]
+        bot_half = img[split_y:h, :]
+
+        top_has_face = detect_face(top_half, face_cascade)
+        bot_has_face = detect_face(bot_half, face_cascade)
+        top_has_qr = detect_qr_code(top_half)
+        bot_has_qr = detect_qr_code(bot_half)
+
+        _, top_txt = extract_id_code(top_half)
+        _, bot_txt = extract_id_code(bot_half)
+
+        top_front_cues = top_has_face or any(k in (top_txt or "").upper() for k in ["GOVERNMENT OF INDIA", "GOVT", "DOB", "MALE", "FEMALE", "भारत सरकार"])
+        bot_back_cues = bot_has_qr or any(k in (bot_txt or "").upper() for k in ["ADDRESS", "UNIQUE IDENTIFICATION", "UIDAI", "प्राधिकरण", "पता", "1947", "HELP@UIDAI"])
+
+        bot_front_cues = bot_has_face or any(k in (bot_txt or "").upper() for k in ["GOVERNMENT OF INDIA", "GOVT", "DOB", "MALE", "FEMALE", "भारत सरकार"])
+        top_back_cues = top_has_qr or any(k in (top_txt or "").upper() for k in ["ADDRESS", "UNIQUE IDENTIFICATION", "UIDAI", "प्राधिकरण", "पता", "1947", "HELP@UIDAI"])
+
+        is_vertical_dual = (top_front_cues and bot_back_cues) or (bot_front_cues and top_back_cues) or (0.50 <= aspect_ratio <= 1.25 and (top_has_face or bot_has_face or top_has_qr or bot_has_qr))
+
+        if is_vertical_dual:
+            top_crop = trim_card_margins(top_half)
+            bot_crop = trim_card_margins(bot_half)
+            top_enh = apply_document_scanner_filter(auto_orient_card(top_crop, face_cascade))
+            bot_enh = apply_document_scanner_filter(auto_orient_card(bot_crop, face_cascade))
+
+            if bot_front_cues and not top_front_cues:
+                front_crop, back_crop = bot_enh, top_enh
+                f_txt, b_txt = bot_txt, top_txt
+            else:
+                front_crop, back_crop = top_enh, bot_enh
+                f_txt, b_txt = top_txt, bot_txt
+
+            f_code, _ = extract_id_code(front_crop)
+            b_code, _ = extract_id_code(back_crop)
+            extracted_code = f_code or b_code or full_code
+            combined_text = (f_txt or "") + " " + (b_txt or "") + " " + (full_text or "")
+            doc_label = get_doc_type_label(combined_text)
+
+            front_id = str(uuid.uuid4())
+            front_save_name = f"{front_id}_front.jpg"
+            cv2.imwrite(os.path.join(upload_dir, front_save_name), front_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+            back_id = str(uuid.uuid4())
+            back_save_name = f"{back_id}_back.jpg"
+            cv2.imwrite(os.path.join(upload_dir, back_save_name), back_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+            return [
+                {
+                    "id": front_id,
+                    "save_name": front_save_name,
+                    "fileType": "image",
+                    "jobType": "id-card",
+                    "docTypeLabel": doc_label,
+                    "side": "front",
+                    "groupId": group_id,
+                    "extractedCode": extracted_code,
+                    "extractedText": f_txt,
+                    "isDarkPage": check_dark_page(front_crop),
+                    "pageCount": 1,
+                    "status": "matched",
+                    "lowConfidenceCrop": False
+                },
+                {
+                    "id": back_id,
+                    "save_name": back_save_name,
+                    "fileType": "image",
+                    "jobType": "id-card",
+                    "docTypeLabel": doc_label,
+                    "side": "back",
+                    "groupId": group_id,
+                    "extractedCode": extracted_code,
+                    "extractedText": b_txt,
+                    "isDarkPage": check_dark_page(back_crop),
+                    "pageCount": 1,
+                    "status": "matched",
+                    "lowConfidenceCrop": False
+                }
+            ]
+
+    # 3B: Horizontal Split Check (Front on Left, Back on Right — e.g. side-by-side scan)
+    if w > 100:
+        split_x = int(w * 0.50)
+        left_half = img[:, 0:split_x]
+        right_half = img[:, split_x:w]
+
+        left_has_face = detect_face(left_half, face_cascade)
+        right_has_face = detect_face(right_half, face_cascade)
+        left_has_qr = detect_qr_code(left_half)
+        right_has_qr = detect_qr_code(right_half)
+
+        _, left_txt = extract_id_code(left_half)
+        _, right_txt = extract_id_code(right_half)
+
+        left_front_cues = left_has_face or any(k in (left_txt or "").upper() for k in ["GOVERNMENT OF INDIA", "GOVT", "DOB", "MALE", "FEMALE", "भारत सरकार"])
+        right_back_cues = right_has_qr or any(k in (right_txt or "").upper() for k in ["ADDRESS", "UNIQUE IDENTIFICATION", "UIDAI", "प्राधिकरण", "पता", "1947", "HELP@UIDAI"])
+
+        right_front_cues = right_has_face or any(k in (right_txt or "").upper() for k in ["GOVERNMENT OF INDIA", "GOVT", "DOB", "MALE", "FEMALE", "भारत सरकार"])
+        left_back_cues = left_has_qr or any(k in (left_txt or "").upper() for k in ["ADDRESS", "UNIQUE IDENTIFICATION", "UIDAI", "प्राधिकरण", "पता", "1947", "HELP@UIDAI"])
+
+        is_horizontal_dual = (aspect_ratio >= 2.10) or (left_front_cues and right_back_cues) or (right_front_cues and left_back_cues)
+
+        if is_horizontal_dual:
+            left_crop = trim_card_margins(left_half)
+            right_crop = trim_card_margins(right_half)
+            left_enh = apply_document_scanner_filter(auto_orient_card(left_crop, face_cascade))
+            right_enh = apply_document_scanner_filter(auto_orient_card(right_crop, face_cascade))
+
+            if right_front_cues and not left_front_cues:
+                front_crop, back_crop = right_enh, left_enh
+                f_txt, b_txt = right_txt, left_txt
+            else:
+                front_crop, back_crop = left_enh, right_enh
+                f_txt, b_txt = left_txt, right_txt
+
+            f_code, _ = extract_id_code(front_crop)
+            b_code, _ = extract_id_code(back_crop)
+            extracted_code = f_code or b_code or full_code
+            combined_text = (f_txt or "") + " " + (b_txt or "") + " " + (full_text or "")
+            doc_label = get_doc_type_label(combined_text)
+
+            front_id = str(uuid.uuid4())
+            front_save_name = f"{front_id}_front.jpg"
+            cv2.imwrite(os.path.join(upload_dir, front_save_name), front_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+            back_id = str(uuid.uuid4())
+            back_save_name = f"{back_id}_back.jpg"
+            cv2.imwrite(os.path.join(upload_dir, back_save_name), back_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+            return [
+                {
+                    "id": front_id,
+                    "save_name": front_save_name,
+                    "fileType": "image",
+                    "jobType": "id-card",
+                    "docTypeLabel": doc_label,
+                    "side": "front",
+                    "groupId": group_id,
+                    "extractedCode": extracted_code,
+                    "extractedText": f_txt,
+                    "isDarkPage": check_dark_page(front_crop),
+                    "pageCount": 1,
+                    "status": "matched",
+                    "lowConfidenceCrop": False
+                },
+                {
+                    "id": back_id,
+                    "save_name": back_save_name,
+                    "fileType": "image",
+                    "jobType": "id-card",
+                    "docTypeLabel": doc_label,
+                    "side": "back",
+                    "groupId": group_id,
+                    "extractedCode": extracted_code,
+                    "extractedText": b_txt,
+                    "isDarkPage": check_dark_page(back_crop),
+                    "pageCount": 1,
+                    "status": "matched",
+                    "lowConfidenceCrop": False
+                }
+            ]
+
+    # =========================================================================
+    # CASE 4: SINGLE ID CARD (Camera photo or single scanned side)
+    # =========================================================================
+    card_boxes = find_and_extract_card_boxes(img)
+    if len(card_boxes) == 1:
         warped = four_point_transform(img, card_boxes[0])
         wh, ww = warped.shape[:2]
-        # Shave 2.5% outer border
-        warped = warped[int(wh * 0.025):int(wh * 0.975), int(ww * 0.025):int(ww * 0.975)]
+        warped = warped[int(wh * 0.02):int(wh * 0.98), int(ww * 0.02):int(ww * 0.98)]
         oriented = auto_orient_card(warped, face_cascade)
-        enhanced = enhance_card_image(oriented)
-        has_face = detect_face(enhanced, face_cascade)
-        side = "front" if has_face else "back"
-        code, text = extract_id_code(enhanced)
-        doc_label = get_doc_type_label(text)
+        enhanced = apply_document_scanner_filter(oriented)
+        low_conf = False
+    else:
+        trimmed = trim_card_margins(img)
+        oriented = auto_orient_card(trimmed, face_cascade)
+        enhanced = apply_document_scanner_filter(oriented)
+        low_conf = True
 
-        doc_id = str(uuid.uuid4())
-        save_name = f"{doc_id}.jpg"
-        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        return [{
-            "id": doc_id,
-            "save_name": save_name,
-            "fileType": "image",
-            "jobType": "id-card",
-            "docTypeLabel": doc_label,
-            "side": side,
-            "groupId": group_id,
-            "extractedCode": code,
-            "extractedText": text,
-            "isDarkPage": check_dark_page(enhanced),
-            "pageCount": 1,
-            "status": "matched",
-            "lowConfidenceCrop": False
-        }]
-
-    # STEP 2: Fallback Heuristic Path (When contour detection finds no clean 4-corner polygon)
-    # Case A: Vertical Dual Card (Front on Top, Back on Bottom, scanned square/tall format)
-    if 0.55 <= aspect_ratio <= 1.25:
-        split_y = h // 2
-        top_crop = trim_card_margins(img[0:split_y, :])
-        bottom_crop = trim_card_margins(img[split_y:h, :])
-        top_enh = enhance_card_image(auto_orient_card(top_crop, face_cascade))
-        bottom_enh = enhance_card_image(auto_orient_card(bottom_crop, face_cascade))
-
-        top_has_face = detect_face(top_crop, face_cascade)
-        bottom_has_face = detect_face(bottom_crop, face_cascade)
-
-        if bottom_has_face and not top_has_face:
-            front_crop, back_crop = bottom_enh, top_enh
-            front_raw, back_raw = bottom_crop, top_crop
-        else:
-            front_crop, back_crop = top_enh, bottom_enh
-            front_raw, back_raw = top_crop, bottom_crop
-
-        f_code, f_text = extract_id_code(front_raw)
-        b_code, b_text = extract_id_code(back_raw)
-        extracted_code = f_code or b_code
-        combined_text = (f_text or "") + " " + (b_text or "")
-        doc_label = get_doc_type_label(combined_text)
-
-        front_id = str(uuid.uuid4())
-        front_save_name = f"{front_id}_front.jpg"
-        cv2.imwrite(os.path.join(upload_dir, front_save_name), front_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        back_id = str(uuid.uuid4())
-        back_save_name = f"{back_id}_back.jpg"
-        cv2.imwrite(os.path.join(upload_dir, back_save_name), back_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        return [
-            {
-                "id": front_id,
-                "save_name": front_save_name,
-                "fileType": "image",
-                "jobType": "id-card",
-                "docTypeLabel": doc_label,
-                "side": "front",
-                "groupId": group_id,
-                "extractedCode": extracted_code,
-                "extractedText": f_text,
-                "isDarkPage": check_dark_page(front_crop),
-                "pageCount": 1,
-                "status": "matched",
-                "lowConfidenceCrop": True
-            },
-            {
-                "id": back_id,
-                "save_name": back_save_name,
-                "fileType": "image",
-                "jobType": "id-card",
-                "docTypeLabel": doc_label,
-                "side": "back",
-                "groupId": group_id,
-                "extractedCode": extracted_code,
-                "extractedText": b_text,
-                "isDarkPage": check_dark_page(back_crop),
-                "pageCount": 1,
-                "status": "matched",
-                "lowConfidenceCrop": True
-            }
-        ]
-
-    # Case B: Ultra-wide horizontal scan with 2 cards placed side-by-side (aspect >= 2.35)
-    if aspect_ratio >= 2.35:
-        split_x = w // 2
-        left_crop = trim_card_margins(img[:, 0:split_x])
-        right_crop = trim_card_margins(img[:, split_x:w])
-        left_enh = enhance_card_image(auto_orient_card(left_crop, face_cascade))
-        right_enh = enhance_card_image(auto_orient_card(right_crop, face_cascade))
-
-        left_has_face = detect_face(left_crop, face_cascade)
-        right_has_face = detect_face(right_crop, face_cascade)
-
-        if right_has_face and not left_has_face:
-            front_crop, back_crop = right_enh, left_enh
-            front_raw, back_raw = right_crop, left_crop
-        else:
-            front_crop, back_crop = left_enh, right_enh
-            front_raw, back_raw = left_crop, right_crop
-
-        f_code, f_text = extract_id_code(front_raw)
-        b_code, b_text = extract_id_code(back_raw)
-        extracted_code = f_code or b_code
-        combined_text = (f_text or "") + " " + (b_text or "")
-        doc_label = get_doc_type_label(combined_text)
-
-        front_id = str(uuid.uuid4())
-        front_save_name = f"{front_id}_front.jpg"
-        cv2.imwrite(os.path.join(upload_dir, front_save_name), front_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        back_id = str(uuid.uuid4())
-        back_save_name = f"{back_id}_back.jpg"
-        cv2.imwrite(os.path.join(upload_dir, back_save_name), back_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        return [
-            {
-                "id": front_id,
-                "save_name": front_save_name,
-                "fileType": "image",
-                "jobType": "id-card",
-                "docTypeLabel": doc_label,
-                "side": "front",
-                "groupId": group_id,
-                "extractedCode": extracted_code,
-                "extractedText": f_text,
-                "isDarkPage": check_dark_page(front_crop),
-                "pageCount": 1,
-                "status": "matched",
-                "lowConfidenceCrop": True
-            },
-            {
-                "id": back_id,
-                "save_name": back_save_name,
-                "fileType": "image",
-                "jobType": "id-card",
-                "docTypeLabel": doc_label,
-                "side": "back",
-                "groupId": group_id,
-                "extractedCode": extracted_code,
-                "extractedText": b_text,
-                "isDarkPage": check_dark_page(back_crop),
-                "pageCount": 1,
-                "status": "matched",
-                "lowConfidenceCrop": True
-            }
-        ]
-
-    # Case C: Single Card Camera / Phone Photo (standard smartphone 4:3, 16:9, or card aspect ratios)
-    # Covers aspect ratios from 0.40 to 2.35 (standard single phone photos without splitting)
-    trimmed = trim_card_margins(img)
-    oriented = auto_orient_card(trimmed, face_cascade)
-    enhanced = enhance_card_image(oriented)
     has_face = detect_face(enhanced, face_cascade)
-    side = "front" if has_face else "back"
+    has_qr = detect_qr_code(enhanced)
     code, text = extract_id_code(enhanced)
-    doc_label = get_doc_type_label(text)
+    doc_label = get_doc_type_label(text or full_text)
 
-    # Check if this document is actually an ID card (either card aspect ratio, has face, or recognized govt ID text)
-    is_id_card = (0.50 <= aspect_ratio <= 2.20) or has_face or (doc_label != "General Document" and doc_label != "ID Card")
+    # Classify side: Front if face present or Front header; Back if QR/address present without face
+    if has_face or any(k in (text or full_text or "").upper() for k in ["GOVERNMENT OF INDIA", "DOB", "MALE", "FEMALE", "भारत सरकार"]):
+        side = "front"
+    elif has_qr or any(k in (text or full_text or "").upper() for k in ["ADDRESS", "UNIQUE IDENTIFICATION", "UIDAI", "प्राधिकरण", "पता"]):
+        side = "back"
+    else:
+        side = "front"
 
-    if is_id_card:
-        doc_id = str(uuid.uuid4())
-        save_name = f"{doc_id}.jpg"
-        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-        return [{
-            "id": doc_id,
-            "save_name": save_name,
-            "fileType": "image",
-            "jobType": "id-card",
-            "docTypeLabel": doc_label,
-            "side": side,
-            "groupId": group_id,
-            "extractedCode": code,
-            "extractedText": text,
-            "isDarkPage": check_dark_page(enhanced),
-            "pageCount": 1,
-            "status": "matched" if side == "front" else "unmatched",
-            "lowConfidenceCrop": True
-        }]
-
-    # Case D: General Document (Full page / document / receipt / letter)
     doc_id = str(uuid.uuid4())
     save_name = f"{doc_id}.jpg"
-    cv2.imwrite(os.path.join(upload_dir, save_name), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
 
     return [{
         "id": doc_id,
         "save_name": save_name,
         "fileType": "image",
-        "jobType": "general-document",
-        "docTypeLabel": "General Document",
-        "side": None,
+        "jobType": "id-card",
+        "docTypeLabel": doc_label,
+        "side": side,
         "groupId": group_id,
-        "extractedCode": None,
-        "extractedText": None,
-        "isDarkPage": check_dark_page(img),
+        "extractedCode": code or full_code,
+        "extractedText": text or full_text,
+        "isDarkPage": check_dark_page(enhanced),
         "pageCount": 1,
-        "status": "matched",
-        "lowConfidenceCrop": False
+        "status": "matched" if side == "front" else "unmatched",
+        "lowConfidenceCrop": low_conf
     }]
 
 def group_documents(documents: list) -> list:

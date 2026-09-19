@@ -904,33 +904,85 @@ const PrintStudioWorkspace = ({
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
               
               {/* Left Column: A4 Paper Preview Canvas */}
-              <div className="flex-1 bg-slate-950 p-6 overflow-y-auto flex flex-col items-center justify-center relative custom-scrollbar">
+              <div className="flex-1 bg-slate-950 p-6 overflow-y-auto flex flex-col items-center relative custom-scrollbar">
                 {previewModal.loading ? (
-                  <div className="flex flex-col items-center gap-3 text-cyan-400">
+                  <div className="flex flex-col items-center justify-center my-auto gap-3 text-cyan-400">
                     <RefreshCw className="animate-spin" size={28} />
                     <span className="text-xs font-semibold text-slate-400">Compositing 300 DPI Layout...</span>
                   </div>
                 ) : previewModal.previews.length === 0 ? (
-                  <div className="text-center text-slate-500 p-6">
+                  <div className="text-center text-slate-500 my-auto p-6">
                     <Layout size={40} className="mx-auto mb-2 opacity-50" />
                     <p className="text-sm font-semibold text-slate-400">No layout preview available for this job.</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-6 w-full max-w-lg">
-                    {previewModal.previews.map((prevItem, pIdx) => {
-                      const prevUrl = prevItem.previewUrl.startsWith('http') 
-                        ? prevItem.previewUrl 
-                        : api.defaults.baseURL.replace('/api/v1', '') + prevItem.previewUrl;
+                  <div className="flex flex-col items-center gap-4 w-full max-w-lg my-auto">
+                    
+                    {/* Multi-Sheet Selector Tabs (When multiple documents/cards exist in a job) */}
+                    {previewModal.previews.length > 1 && (
+                      <div className="flex items-center justify-between w-full bg-slate-900/90 border border-slate-800 p-2 rounded-xl backdrop-blur-sm gap-2">
+                        <button
+                          onClick={() => {
+                            const cur = previewModal.activeSheetIndex ?? 0;
+                            const prev = cur > 0 ? cur - 1 : previewModal.previews.length - 1;
+                            setPreviewModal({ ...previewModal, activeSheetIndex: prev });
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                        >
+                          ◀ Prev Sheet
+                        </button>
+
+                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar px-1 py-0.5">
+                          {previewModal.previews.map((sheet, sIdx) => {
+                            const isActive = (previewModal.activeSheetIndex ?? 0) === sIdx;
+                            return (
+                              <button
+                                key={sIdx}
+                                onClick={() => setPreviewModal({ ...previewModal, activeSheetIndex: sIdx })}
+                                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                  isActive
+                                    ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
+                                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                                }`}
+                              >
+                                Sheet {sIdx + 1}: {sheet.docTypeLabel || 'Document'}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const cur = previewModal.activeSheetIndex ?? 0;
+                            const next = cur < previewModal.previews.length - 1 ? cur + 1 : 0;
+                            setPreviewModal({ ...previewModal, activeSheetIndex: next });
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Next Sheet ▶
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Active Sheet Display */}
+                    {(() => {
+                      const activeIdx = previewModal.activeSheetIndex ?? 0;
+                      const activePreview = previewModal.previews[activeIdx] || previewModal.previews[0];
+                      if (!activePreview) return null;
+
+                      const prevUrl = activePreview.previewUrl.startsWith('http')
+                        ? activePreview.previewUrl
+                        : api.defaults.baseURL.replace('/api/v1', '') + activePreview.previewUrl;
 
                       return (
-                        <div key={pIdx} className="flex flex-col items-center gap-2 w-full">
+                        <div className="flex flex-col items-center gap-2 w-full">
                           <div className="flex items-center justify-between w-full text-xs text-slate-400 px-1">
                             <span className="font-bold text-slate-300 flex items-center gap-1.5">
                               <Sparkles size={13} className="text-cyan-400" />
-                              {prevItem.docTypeLabel || 'Document'} (Group: {prevItem.groupId})
+                              {activePreview.docTypeLabel || 'Document'} (Group: {activePreview.groupId})
                             </span>
                             <span className="font-mono text-[11px] text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/50">
-                              A4 Sheet (300 DPI)
+                              Sheet {(activeIdx + 1)} of {previewModal.previews.length} (300 DPI A4)
                             </span>
                           </div>
 
@@ -944,16 +996,16 @@ const PrintStudioWorkspace = ({
 
                             {/* Dimension Overlay Badge */}
                             <div className="absolute bottom-2 right-2 bg-slate-900/90 backdrop-blur text-white text-[10px] font-mono px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-2 shadow-lg">
-                              <span className="text-cyan-400 font-semibold">CR80 Standard: 85.6 × 54.0 mm</span>
+                              <span className="text-cyan-400 font-semibold">CR80: 85.6 × 54.0 mm</span>
                               <span className="text-slate-500">|</span>
-                              <span className="text-emerald-400">300 DPI Ultra-HD</span>
+                              <span className="text-emerald-400">300 DPI Scanner Crisp</span>
                               <span className="text-slate-500">|</span>
-                              <span className="text-amber-300">Crop Marks Active</span>
+                              <span className="text-amber-300">Natural Colors</span>
                             </div>
                           </div>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 )}
               </div>
