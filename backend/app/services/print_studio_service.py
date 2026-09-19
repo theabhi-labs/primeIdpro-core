@@ -106,40 +106,72 @@ def auto_orient_card(card_bgr: np.ndarray, face_cascade=None) -> np.ndarray:
 def find_and_extract_card_boxes(img_bgr: np.ndarray) -> list:
     """
     Finds 1 or 2 ID card bounding quadrilaterals from a camera photo
-    (removes bedsheets, tables, desks, colored backgrounds).
+    (robustly segments cards on bedsheets, tables, desks, colored/red cloth backgrounds).
     """
     try:
         h, w = img_bgr.shape[:2]
         scale = 1000.0 / max(h, w)
         small = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
         sh, sw = small.shape[:2]
+        total_area = sw * sh
 
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        # Bilateral filter suppresses fabric weave/cloth texture noise while strictly preserving card step-edges
+        filtered = cv2.bilateralFilter(small, 9, 75, 75)
+        gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(filtered, cv2.COLOR_BGR2HSV)
+        lab = cv2.cvtColor(filtered, cv2.COLOR_BGR2LAB)
 
-        thresh_methods = [
-            cv2.Canny(blurred, 30, 120),
-            cv2.Canny(blurred, 50, 180),
-            cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-        ]
+        s_chan = hsv[:, :, 1]
+        l_chan, a_chan, b_chan = cv2.split(lab)
 
-        for edges in thresh_methods:
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-            dilated = cv2.dilate(edges, kernel, iterations=2)
+        candidate_masks = []
+
+        # 1. Grayscale Canny edges
+        candidate_masks.append(cv2.Canny(gray, 30, 100))
+        candidate_masks.append(cv2.Canny(gray, 50, 150))
+
+        # 2. Max-channel Color Canny (gradient across B, G, R)
+        b_edges = cv2.Canny(filtered[:, :, 0], 30, 100)
+        g_edges = cv2.Canny(filtered[:, :, 1], 30, 100)
+        r_edges = cv2.Canny(filtered[:, :, 2], 30, 100)
+        candidate_masks.append(cv2.bitwise_or(cv2.bitwise_or(b_edges, g_edges), r_edges))
+
+        # 3. Saturation Otsu (cleanly segments ID cards from high-saturation cloth/bedsheets)
+        if s_chan.max() - s_chan.min() > 35:
+            _, s_otsu = cv2.threshold(s_chan, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            candidate_masks.append(cv2.Canny(s_otsu, 30, 100))
+            candidate_masks.append(s_otsu)
+
+        # 4. Adaptive threshold with morphological cleanup
+        adapt = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 4)
+        candidate_masks.append(adapt)
+
+        # 5. Otsu on Gray
+        _, gray_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        candidate_masks.append(gray_otsu)
+
+        best_found = []
+
+        for raw_mask in candidate_masks:
+            # Morphological close to bridge broken edge gaps
+            close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+            closed = cv2.morphologyEx(raw_mask, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+            dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            dilated = cv2.dilate(closed, dilate_kernel, iterations=1)
 
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
             found = []
-            for cnt in contours[:12]:
+            for cnt in contours[:15]:
                 area = cv2.contourArea(cnt)
-                if area < (sw * sh * 0.10) or area > (sw * sh * 0.98):
+                if area < (total_area * 0.05) or area > (total_area * 0.96):
                     continue
 
                 hull = cv2.convexHull(cnt)
                 peri = cv2.arcLength(hull, True)
                 approx = None
-                for factor in [0.03, 0.025, 0.035, 0.02, 0.04]:
+                for factor in [0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05]:
                     app = cv2.approxPolyDP(hull, factor * peri, True)
                     if len(app) == 4:
                         approx = app
@@ -150,7 +182,7 @@ def find_and_extract_card_boxes(img_bgr: np.ndarray) -> list:
                 if rw == 0 or rh == 0:
                     continue
                 aspect = max(rw, rh) / min(rw, rh)
-                if 1.20 <= aspect <= 2.20:
+                if 1.15 <= aspect <= 2.40:
                     if approx is not None and len(approx) == 4:
                         orig_pts = approx.reshape(4, 2) * (1.0 / scale)
                     else:
@@ -158,19 +190,17 @@ def find_and_extract_card_boxes(img_bgr: np.ndarray) -> list:
                         orig_pts = box * (1.0 / scale)
                     found.append((area, orig_pts, rect[0]))
 
-            if len(found) > 0:
-                found = sorted(found, key=lambda x: x[0], reverse=True)
-                if len(found) >= 2 and found[1][0] >= found[0][0] * 0.40:
-                    c1, c2 = found[0][2], found[1][2]
-                    if abs(c1[1] - c2[1]) > abs(c1[0] - c2[0]):
-                        sorted_boxes = sorted([found[0], found[1]], key=lambda x: x[2][1])
-                    else:
-                        sorted_boxes = sorted([found[0], found[1]], key=lambda x: x[2][0])
-                    return [sorted_boxes[0][1], sorted_boxes[1][1]]
+            if len(found) >= 2 and found[1][0] >= found[0][0] * 0.35:
+                c1, c2 = found[0][2], found[1][2]
+                if abs(c1[1] - c2[1]) > abs(c1[0] - c2[0]):
+                    sorted_boxes = sorted([found[0], found[1]], key=lambda x: x[2][1])
                 else:
-                    return [found[0][1]]
+                    sorted_boxes = sorted([found[0], found[1]], key=lambda x: x[2][0])
+                return [sorted_boxes[0][1], sorted_boxes[1][1]]
+            elif len(found) == 1 and len(best_found) == 0:
+                best_found = [found[0][1]]
 
-        return []
+        return best_found
     except Exception as e:
         print(f"Error finding card boxes: {e}")
         return []
@@ -205,24 +235,67 @@ def enhance_card_image(card_bgr: np.ndarray, target_w: int = 1011, target_h: int
 
 def trim_card_margins(img_bgr: np.ndarray, tol: int = 240) -> np.ndarray:
     """
-    Trims excessive white / scanner borders around an ID card.
+    Intelligently trims outer background margins (scanner beds, colored cloth, tables).
     """
     try:
-        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        mask = gray < tol
-        coords = np.argwhere(mask)
+        h, w = img_bgr.shape[:2]
+        if h < 50 or w < 50:
+            return img_bgr
+
+        # Sample outer border strips (top, bottom, left, right 4%)
+        top_strip = img_bgr[0:max(2, int(h * 0.04)), :]
+        bot_strip = img_bgr[min(h - 2, int(h * 0.96)):, :]
+        left_strip = img_bgr[:, 0:max(2, int(w * 0.04))]
+        right_strip = img_bgr[:, min(w - 2, int(w * 0.96)):]
+
+        border_pixels = np.vstack([
+            top_strip.reshape(-1, 3),
+            bot_strip.reshape(-1, 3),
+            left_strip.reshape(-1, 3),
+            right_strip.reshape(-1, 3)
+        ])
+
+        bg_color = np.median(border_pixels, axis=0)
+        bg_std = np.std(border_pixels, axis=0)
+        bg_gray = 0.299 * bg_color[2] + 0.587 * bg_color[1] + 0.114 * bg_color[0]
+
+        if bg_gray > 225 and np.mean(bg_std) < 25:
+            # White scanner bed
+            gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+            mask = (gray < 230).astype(np.uint8) * 255
+        elif bg_gray < 35 and np.mean(bg_std) < 20:
+            # Black scanner bed
+            gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+            mask = (gray > 45).astype(np.uint8) * 255
+        else:
+            # Colored cloth / table background
+            diff = np.abs(img_bgr.astype(np.float32) - bg_color.astype(np.float32))
+            dist = np.sqrt(np.sum(diff ** 2, axis=2))
+            thresh_val = max(35.0, float(np.mean(bg_std) * 3.0))
+            mask = (dist > thresh_val).astype(np.uint8) * 255
+
+        # Morphological clean up (OPEN removes isolated noise spots on fabric)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
+
+        coords = np.argwhere(cleaned > 0)
         if coords.size > 0:
             y0, x0 = coords.min(axis=0)
             y1, x1 = coords.max(axis=0) + 1
-            h, w = img_bgr.shape[:2]
-            if (y1 - y0) > h * 0.55 and (x1 - x0) > w * 0.55:
+            if (y1 - y0) > h * 0.25 and (x1 - x0) > w * 0.25:
                 pad = 4
                 y0 = max(0, y0 - pad)
                 x0 = max(0, x0 - pad)
                 y1 = min(h, y1 + pad)
                 x1 = min(w, x1 + pad)
-                return img_bgr[y0:y1, x0:x1]
-        return img_bgr
+                cropped = img_bgr[y0:y1, x0:x1]
+                ch, cw = cropped.shape[:2]
+                if ch > 20 and cw > 20:
+                    return cropped[int(ch * 0.02):int(ch * 0.98), int(cw * 0.02):int(cw * 0.98)]
+
+        # Fallback: shave 2.5% outer border
+        return img_bgr[int(h * 0.025):int(h * 0.975), int(w * 0.025):int(w * 0.975)]
     except Exception:
         return img_bgr
 
@@ -249,22 +322,28 @@ def extract_id_code(image_np: np.ndarray) -> tuple[str, str]:
         pil_img = Image.fromarray(cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB))
         text = pytesseract.image_to_string(pil_img)
         
+        # pyrefly: ignore [missing-attribute]
         text_clean = re.sub(r'[^A-Z0-9]', '', text.upper())
         
         digit_match = re.search(r'\d{8,12}', text_clean)
         if digit_match:
+            # pyrefly: ignore [bad-return]
             return digit_match.group(0), text
             
         pan_match = re.search(r'[A-Z]{5}\d{4}[A-Z]', text_clean)
         if pan_match:
+            # pyrefly: ignore [bad-return]
             return pan_match.group(0), text
             
         words = re.findall(r'[A-Z0-9]{8,15}', text_clean)
         if words:
+            # pyrefly: ignore [bad-return]
             return max(words, key=len), text
             
+        # pyrefly: ignore [bad-return]
         return None, text
     except Exception:
+        # pyrefly: ignore [bad-return]
         return None, ""
 
 def check_dark_page(image_np: np.ndarray, threshold: int = 65) -> bool:
@@ -305,7 +384,7 @@ def get_doc_type_label(text: str) -> str:
 def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None) -> list[dict]:
     """
     Core Processor:
-    1. For camera/mobile uploads on textured surfaces (bedsheet, table), automatically
+    1. For camera/mobile uploads on textured surfaces (bedsheet, table, red cloth), automatically
        finds card contours, extracts quadrilateral with perspective correction, removes
        background, corrects orientation, and enhances to 300 DPI CR80 standard.
     2. For dual-card photos or scans (front and back in 1 image), automatically splits
@@ -336,7 +415,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             "extractedText": None,
             "isDarkPage": False,
             "pageCount": page_count,
-            "status": "matched"
+            "status": "matched",
+            "lowConfidenceCrop": False
         }]
 
     # Handle Image files
@@ -354,7 +434,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             "extractedText": None,
             "isDarkPage": False,
             "pageCount": 1,
-            "status": "matched"
+            "status": "matched",
+            "lowConfidenceCrop": False
         }]
 
     h, w = img.shape[:2]
@@ -365,7 +446,7 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
     card_boxes = find_and_extract_card_boxes(img)
 
     if len(card_boxes) == 2:
-        # 2 cards detected in the photo (e.g. Front & Back photographed together on table/bed)
+        # 2 cards detected in the photo (e.g. Front & Back photographed together on table/bed/cloth)
         cards = []
         for i, box in enumerate(card_boxes):
             warped = four_point_transform(img, box)
@@ -383,16 +464,20 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
         else:
             front_info, back_info = cards[0], cards[1]
 
+        # pyrefly: ignore [unsupported-operation]
         combined_text = (front_info["text"] or "") + " " + (back_info["text"] or "")
+        # pyrefly: ignore [bad-argument-type]
         doc_label = get_doc_type_label(combined_text)
         extracted_code = front_info["code"] or back_info["code"]
 
         front_id = str(uuid.uuid4())
         front_save_name = f"{front_id}_front.jpg"
+        # pyrefly: ignore [no-matching-overload]
         cv2.imwrite(os.path.join(upload_dir, front_save_name), front_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 95])
 
         back_id = str(uuid.uuid4())
         back_save_name = f"{back_id}_back.jpg"
+        # pyrefly: ignore [no-matching-overload]
         cv2.imwrite(os.path.join(upload_dir, back_save_name), back_info["img"], [cv2.IMWRITE_JPEG_QUALITY, 95])
 
         return [
@@ -406,9 +491,10 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "groupId": group_id,
                 "extractedCode": extracted_code,
                 "extractedText": front_info["text"],
-                "isDarkPage": False,
+                "isDarkPage": check_dark_page(front_info["img"]),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": False
             },
             {
                 "id": back_id,
@@ -420,14 +506,15 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "groupId": group_id,
                 "extractedCode": extracted_code,
                 "extractedText": back_info["text"],
-                "isDarkPage": False,
+                "isDarkPage": check_dark_page(back_info["img"]),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": False
             }
         ]
 
     elif len(card_boxes) == 1:
-        # Single card detected on photo background (e.g. camera photo on bed/table)
+        # Single card cleanly detected on photo background (e.g. camera photo on bed/table/cloth)
         warped = four_point_transform(img, card_boxes[0])
         wh, ww = warped.shape[:2]
         # Shave 2.5% outer border
@@ -453,14 +540,15 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             "groupId": group_id,
             "extractedCode": code,
             "extractedText": text,
-            "isDarkPage": False,
+            "isDarkPage": check_dark_page(enhanced),
             "pageCount": 1,
-            "status": "matched"
+            "status": "matched",
+            "lowConfidenceCrop": False
         }]
 
-    # STEP 2: Fallback for clean digital/scanned pages with no distinct surface background
-    # Case A: Vertical Dual Card (Front on Top, Back on Bottom)
-    if 0.55 <= aspect_ratio <= 1.30:
+    # STEP 2: Fallback Heuristic Path (When contour detection finds no clean 4-corner polygon)
+    # Case A: Vertical Dual Card (Front on Top, Back on Bottom, scanned square/tall format)
+    if 0.55 <= aspect_ratio <= 1.25:
         split_y = h // 2
         top_crop = trim_card_margins(img[0:split_y, :])
         bottom_crop = trim_card_margins(img[split_y:h, :])
@@ -504,7 +592,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "extractedText": f_text,
                 "isDarkPage": check_dark_page(front_crop),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": True
             },
             {
                 "id": back_id,
@@ -518,12 +607,13 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "extractedText": b_text,
                 "isDarkPage": check_dark_page(back_crop),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": True
             }
         ]
 
-    # Case B: Horizontal Dual Card (aspect >= 2.2)
-    if aspect_ratio >= 2.2:
+    # Case B: Ultra-wide horizontal scan with 2 cards placed side-by-side (aspect >= 2.35)
+    if aspect_ratio >= 2.35:
         split_x = w // 2
         left_crop = trim_card_margins(img[:, 0:split_x])
         right_crop = trim_card_margins(img[:, split_x:w])
@@ -567,7 +657,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "extractedText": f_text,
                 "isDarkPage": check_dark_page(front_crop),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": True
             },
             {
                 "id": back_id,
@@ -581,21 +672,25 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
                 "extractedText": b_text,
                 "isDarkPage": check_dark_page(back_crop),
                 "pageCount": 1,
-                "status": "matched"
+                "status": "matched",
+                "lowConfidenceCrop": True
             }
         ]
 
-    # Case C: Clean single card image
-    is_card_aspect = (1.30 <= aspect_ratio <= 1.95) or (0.50 <= aspect_ratio <= 0.77)
-    if is_card_aspect:
-        trimmed = trim_card_margins(img)
-        oriented = auto_orient_card(trimmed, face_cascade)
-        enhanced = enhance_card_image(oriented)
-        has_face = detect_face(enhanced, face_cascade)
-        side = "front" if has_face else "back"
-        code, text = extract_id_code(enhanced)
-        doc_label = get_doc_type_label(text)
+    # Case C: Single Card Camera / Phone Photo (standard smartphone 4:3, 16:9, or card aspect ratios)
+    # Covers aspect ratios from 0.40 to 2.35 (standard single phone photos without splitting)
+    trimmed = trim_card_margins(img)
+    oriented = auto_orient_card(trimmed, face_cascade)
+    enhanced = enhance_card_image(oriented)
+    has_face = detect_face(enhanced, face_cascade)
+    side = "front" if has_face else "back"
+    code, text = extract_id_code(enhanced)
+    doc_label = get_doc_type_label(text)
 
+    # Check if this document is actually an ID card (either card aspect ratio, has face, or recognized govt ID text)
+    is_id_card = (0.50 <= aspect_ratio <= 2.20) or has_face or (doc_label != "General Document" and doc_label != "ID Card")
+
+    if is_id_card:
         doc_id = str(uuid.uuid4())
         save_name = f"{doc_id}.jpg"
         cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -612,10 +707,11 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             "extractedText": text,
             "isDarkPage": check_dark_page(enhanced),
             "pageCount": 1,
-            "status": "matched" if side == "front" else "unmatched"
+            "status": "matched" if side == "front" else "unmatched",
+            "lowConfidenceCrop": True
         }]
 
-    # Case D: General Document (Full page / document / receipt)
+    # Case D: General Document (Full page / document / receipt / letter)
     doc_id = str(uuid.uuid4())
     save_name = f"{doc_id}.jpg"
     cv2.imwrite(os.path.join(upload_dir, save_name), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -632,7 +728,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
         "extractedText": None,
         "isDarkPage": check_dark_page(img),
         "pageCount": 1,
-        "status": "matched"
+        "status": "matched",
+        "lowConfidenceCrop": False
     }]
 
 def group_documents(documents: list) -> list:
@@ -647,18 +744,7 @@ def group_documents(documents: list) -> list:
         if not doc.get("docTypeLabel"):
             doc["docTypeLabel"] = "ID Card" if doc.get("jobType") == "id-card" else "General Document"
 
-    # Step 2: Check pre-matched groups (where groupId is already shared between a front and back)
-    group_front_counts = {}
-    group_back_counts = {}
-    for doc in documents:
-        gid = doc.get("groupId")
-        if gid:
-            if doc.get("side") == "front":
-                group_front_counts[gid] = group_front_counts.get(gid, 0) + 1
-            elif doc.get("side") == "back":
-                group_back_counts[gid] = group_back_counts.get(gid, 0) + 1
-
-    # Step 3: Code-based matching (Aadhaar / PAN numbers)
+    # Step 2: Code-based matching (Aadhaar / PAN numbers)
     code_to_group = {}
     for doc in documents:
         code = doc.get("extractedCode")
@@ -674,6 +760,17 @@ def group_documents(documents: list) -> list:
         if doc.get("side") == "back" and code and code in code_to_group:
             doc["groupId"] = code_to_group[code]
             doc["status"] = "matched"
+
+    # Step 3: Count fronts and backs per group (including pre-split and code-matched)
+    group_front_counts = {}
+    group_back_counts = {}
+    for doc in documents:
+        gid = doc.get("groupId")
+        if gid:
+            if doc.get("side") == "front":
+                group_front_counts[gid] = group_front_counts.get(gid, 0) + 1
+            elif doc.get("side") == "back":
+                group_back_counts[gid] = group_back_counts.get(gid, 0) + 1
 
     # Step 4: Find remaining unassigned/unpaired fronts and backs
     unpaired_fronts = []
@@ -695,23 +792,23 @@ def group_documents(documents: list) -> list:
                     doc["groupId"] = str(uuid.uuid4())[:8]
                 doc["status"] = "matched"
 
-    # Step 5: Sequential pairing for remaining batch cards (e.g. 5 fronts and 5 backs)
-    pair_count = min(len(unpaired_fronts), len(unpaired_backs))
-    for i in range(pair_count):
-        new_gid = str(uuid.uuid4())[:8]
-        unpaired_fronts[i]["groupId"] = new_gid
-        unpaired_fronts[i]["status"] = "matched"
-        unpaired_backs[i]["groupId"] = new_gid
-        unpaired_backs[i]["status"] = "matched"
+    # Step 5: Handling of remaining unassigned/unpaired cards
+    # =====================================================================================
+    # CRITICAL SAFETY RULE: DO NOT REINTRODUCE POSITIONAL/SEQUENTIAL FALLBACK MATCHING!
+    # Unmatched fronts and backs must NEVER be guessed by index order or array position,
+    # as that can silently cross-pair different people's government ID documents.
+    # Only genuine extractedCode equality or pre-split groupId may automatically pair.
+    # Everything else must be flagged as "unmatched" for explicit operator review & pairing.
+    # =====================================================================================
 
-    # Any leftover fronts can be printed as single cards
-    for f_doc in unpaired_fronts[pair_count:]:
+    # Unpaired fronts can be printed as single cards or paired manually by operator
+    for f_doc in unpaired_fronts:
         if not f_doc.get("groupId"):
             f_doc["groupId"] = str(uuid.uuid4())[:8]
         f_doc["status"] = "matched"
 
-    # Any leftover backs without a front become unmatched (asking operator to pair)
-    for b_doc in unpaired_backs[pair_count:]:
+    # Any back that could not be matched by exact code equality MUST remain unmatched!
+    for b_doc in unpaired_backs:
         if not b_doc.get("groupId"):
             b_doc["groupId"] = str(uuid.uuid4())[:8]
         b_doc["status"] = "unmatched"

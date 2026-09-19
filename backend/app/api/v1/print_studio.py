@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 import uuid
 import os
 import shutil
+import glob
 from typing import List, Optional
 from datetime import datetime
 
@@ -49,6 +50,14 @@ async def upload_manual(
         # Process and auto-split file if dual-card
         card_results = process_upload_and_split(save_path, UPLOAD_DIR, face_cascade)
         
+        # Priority 2: Clean up original unsplit file immediately if cards were split/transformed into new files
+        card_save_names = {c.get("save_name") for c in card_results if isinstance(c, dict) and c.get("save_name")}
+        if save_name not in card_save_names and os.path.exists(save_path):
+            try:
+                os.remove(save_path)
+            except Exception as e:
+                print(f"Failed to delete temporary unsplit file {save_path}: {e}")
+        
         for card in card_results:
             doc = PrintDocument(
                 id=card["id"],
@@ -62,7 +71,8 @@ async def upload_manual(
                 groupId=card.get("groupId"),
                 status=card.get("status", "matched"),
                 isDarkPage=card.get("isDarkPage", False),
-                pageCount=card.get("pageCount", 1)
+                pageCount=card.get("pageCount", 1),
+                lowConfidenceCrop=card.get("lowConfidenceCrop", False)
             )
             job.documents.append(doc)
             
@@ -75,6 +85,16 @@ async def upload_manual(
     
     # Update documents with group info
     job.documents = [PrintDocument(**gd) for gd in grouped_dicts]
+
+    # Priority 5: Auto-invert dark pages during ingestion if safe and enabled in settings
+    if global_settings.autoInvertDarkPages:
+        for doc in job.documents:
+            if doc.isDarkPage and doc.fileType == "image" and doc.fileUrl:
+                fn = os.path.basename(doc.fileUrl)
+                fp = os.path.join(UPLOAD_DIR, fn)
+                if os.path.exists(fp) and analyze_invert_safety(fp):
+                    if invert_page(fp, fp):
+                        doc.isDarkPage = False
         
     # Check if we have any unmatched documents
     has_unmatched = any(getattr(d, "status", None) == "unmatched" for d in job.documents)
@@ -116,6 +136,15 @@ async def delete_job(job_id: str):
                     os.remove(file_path)
                 except Exception as e:
                     print(f"Failed to delete {file_path}: {e}")
+
+    # Priority 2: Purge any preview files generated for this job
+    preview_pattern = os.path.join(UPLOAD_DIR, f"preview_{job_id}_*")
+    for prev_file in glob.glob(preview_pattern):
+        try:
+            if os.path.exists(prev_file):
+                os.remove(prev_file)
+        except Exception as e:
+            print(f"Failed to delete preview file {prev_file}: {e}")
                     
     return JSONResponse({"success": True, "message": "Job deleted"})
 
@@ -235,6 +264,15 @@ async def update_job_status(job_id: str, status: str):
                     except Exception as e:
                         print(f"Failed to delete {file_path}: {e}")
                 doc.extractedCode = "***MASKED***"
+
+        # Priority 2: Purge any preview files generated for this job
+        preview_pattern = os.path.join(UPLOAD_DIR, f"preview_{job_id}_*")
+        for prev_file in glob.glob(preview_pattern):
+            try:
+                if os.path.exists(prev_file):
+                    os.remove(prev_file)
+            except Exception as e:
+                print(f"Failed to delete preview file {prev_file}: {e}")
                 
     return JSONResponse({"success": True, "job": jobs_db[job_id].model_dump(mode="json")})
 
@@ -326,26 +364,35 @@ async def execute_print_job(job_id: str, printer_name: str = None):
                         output_name = f"duplex_{gid}.pdf"
                         output_path = os.path.join(UPLOAD_DIR, output_name)
                         if generate_multipage_pdf(front_path, back_path, output_path):
-                            print_file(output_path, p_name)
+                            print_success = print_file(output_path, p_name)
                             if os.path.exists(output_path):
                                 os.remove(output_path)
+                            if not print_success:
+                                job.status = "failed"
+                                raise HTTPException(status_code=500, detail=f"Failed to dispatch duplex job to printer '{p_name}'. Please verify printer connection and settings.")
                     else:
                         requires_flip = True
                         if front_path:
                             output_name = f"single_{gid}_front.jpg"
                             output_path = os.path.join(UPLOAD_DIR, output_name)
                             if generate_single_print(front_path, output_path):
-                                print_file(output_path, p_name)
+                                print_success = print_file(output_path, p_name)
                                 if os.path.exists(output_path):
                                     os.remove(output_path)
+                                if not print_success:
+                                    job.status = "failed"
+                                    raise HTTPException(status_code=500, detail=f"Failed to dispatch front page to printer '{p_name}'. Please verify printer connection and settings.")
                 else:
                     output_name = f"composite_{gid}.jpg"
                     output_path = os.path.join(UPLOAD_DIR, output_name)
                     
                     if generate_composite(front_path, back_path, output_path, mode=job_combine_mode):
-                        print_file(output_path, p_name)
+                        print_success = print_file(output_path, p_name)
                         if os.path.exists(output_path):
                             os.remove(output_path)
+                        if not print_success:
+                            job.status = "failed"
+                            raise HTTPException(status_code=500, detail=f"Failed to dispatch composite print to printer '{p_name}'. Please verify printer connection and settings.")
                         
             for u_doc in g["unclassified"]:
                 u_path = os.path.join(UPLOAD_DIR, os.path.basename(u_doc.fileUrl)) if u_doc.fileUrl else None
@@ -353,19 +400,27 @@ async def execute_print_job(job_id: str, printer_name: str = None):
                     continue
                 
                 if u_doc.fileType == "pdf":
-                    print_file(u_path, p_name)
+                    print_success = print_file(u_path, p_name)
+                    if not print_success:
+                        job.status = "failed"
+                        raise HTTPException(status_code=500, detail=f"Failed to dispatch PDF document to printer '{p_name}'. Please verify printer connection and settings.")
                 else:
                     output_name = f"single_{u_doc.id}.jpg"
                     output_path = os.path.join(UPLOAD_DIR, output_name)
                     if generate_single_print(u_path, output_path):
-                        print_file(output_path, p_name)
+                        print_success = print_file(output_path, p_name)
                         if os.path.exists(output_path):
                             os.remove(output_path)
+                        if not print_success:
+                            job.status = "failed"
+                            raise HTTPException(status_code=500, detail=f"Failed to dispatch single document print to printer '{p_name}'. Please verify printer connection and settings.")
                             
         if requires_flip:
             return await update_job_status(job_id, "waiting-flip")
             
         return await update_job_status(job_id, "printed")
+    except HTTPException:
+        raise
     except Exception as e:
         job.status = "failed"
         raise HTTPException(status_code=500, detail=f"Print failed: {str(e)}")
@@ -394,9 +449,12 @@ async def execute_print_backs(job_id: str, printer_name: str = None):
             output_path = os.path.join(UPLOAD_DIR, output_name)
             
             if generate_single_print(back_path, output_path):
-                print_file(output_path, p_name)
+                print_success = print_file(output_path, p_name)
                 if os.path.exists(output_path):
                     os.remove(output_path)
+                if not print_success:
+                    job.status = "failed"
+                    raise HTTPException(status_code=500, detail=f"Failed to dispatch back page to printer '{p_name}'. Please verify printer connection.")
                     
     return await update_job_status(job_id, "printed")
 

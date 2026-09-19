@@ -39,6 +39,9 @@ const PrintStudioWorkspace = ({
   const [pairingTarget, setPairingTarget] = useState("");
   const [isPairing, setIsPairing] = useState(false);
 
+  // Force Invert Prompt State
+  const [forceInvertPrompt, setForceInvertPrompt] = useState(null); // { jobId, docId, message }
+
   // Preview / Review Modal State
   const [previewModal, setPreviewModal] = useState(null); // { job, previews: [], loading: boolean, combineMode: 'single-page'|'two-page', selectedPrinter: '' }
 
@@ -170,12 +173,30 @@ const PrintStudioWorkspace = ({
     });
   };
 
-  const handleInvert = (jobId, docId) => {
+  const handleInvert = (jobId, docId, force = false) => {
     withLoading(`invert-${docId}`, async () => {
-      await api.post(`/print-studio/jobs/${jobId}/documents/${docId}/invert`);
-      showToast("Colors inverted successfully", "success");
-      if (previewModal?.job?.id === jobId) {
-        openReviewModal(previewModal.job);
+      try {
+        const url = force 
+          ? `/print-studio/jobs/${jobId}/documents/${docId}/invert?force=true` 
+          : `/print-studio/jobs/${jobId}/documents/${docId}/invert`;
+        const res = await api.post(url);
+        if (res.data?.success) {
+          showToast("Colors inverted successfully", "success");
+          setForceInvertPrompt(null);
+          if (previewModal?.job?.id === jobId) {
+            openReviewModal(previewModal.job);
+          }
+        }
+      } catch (err) {
+        if (err.response?.data?.requires_force) {
+          setForceInvertPrompt({
+            jobId,
+            docId,
+            message: err.response.data.message || "This page may contain photos or stamps. Inverting colors might alter facial appearance."
+          });
+        } else {
+          showToast(`Invert failed: ${err.response?.data?.detail || err.message}`, "error");
+        }
       }
     });
   };
@@ -750,7 +771,7 @@ const PrintStudioWorkspace = ({
                               )}
                               
                               {/* Top Badges */}
-                              <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
+                              <div className="absolute top-1.5 left-1.5 flex flex-col gap-1 z-10">
                                 {doc.side && (
                                   <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded shadow ${
                                     doc.side === 'front' ? 'bg-cyan-500 text-cyan-950' : 'bg-purple-500 text-purple-950'
@@ -758,9 +779,17 @@ const PrintStudioWorkspace = ({
                                     {doc.side}
                                   </span>
                                 )}
+                                {doc.lowConfidenceCrop && (
+                                  <span 
+                                    className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow flex items-center gap-0.5"
+                                    title="Contour detection used heuristic crop. Please inspect layout before printing."
+                                  >
+                                    ⚠️ Review Crop
+                                  </span>
+                                )}
                               </div>
 
-                              <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
+                              <div className="absolute top-1.5 right-1.5 flex flex-col gap-1 z-10">
                                 {doc.isDarkPage && (
                                   <div className="bg-amber-500/90 text-amber-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow">
                                     Dark Page
@@ -774,14 +803,15 @@ const PrintStudioWorkspace = ({
                               </div>
                               
                               {/* Hover Overlay Actions */}
-                              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 gap-1.5">
+                              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 gap-1.5 z-20">
                                 {fileUrl && doc.fileType !== 'pdf' && (
                                   <button 
                                     onClick={() => setLightboxDoc({ 
                                       url: fileUrl, 
                                       title: doc.docTypeLabel || 'Document Preview',
                                       side: doc.side,
-                                      extractedCode: doc.extractedCode
+                                      extractedCode: doc.extractedCode,
+                                      lowConfidenceCrop: doc.lowConfidenceCrop
                                     })}
                                     className="w-full flex items-center justify-center gap-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 py-1 px-2 rounded-lg transition-colors cursor-pointer border border-slate-700"
                                   >
@@ -1208,6 +1238,86 @@ const PrintStudioWorkspace = ({
                 {isPairing ? 'Pairing...' : 'Pair Documents'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* FORCE INVERT CONFIRMATION MODAL */}
+      {/* ========================================================================= */}
+      {forceInvertPrompt && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl p-5 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Heuristic Safety Warning</h3>
+                <p className="text-xs text-slate-400">Photo / Stamp Detected on Dark Page</p>
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+              {forceInvertPrompt.message || "This page may contain photos, logos, or colored stamps. Inverting colors might alter facial appearance or stamp contrast."}
+            </p>
+            
+            <p className="text-xs text-amber-300 font-semibold">
+              Are you sure you want to force color inversion on this document?
+            </p>
+            
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button 
+                onClick={() => setForceInvertPrompt(null)}
+                className="px-4 py-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleInvert(forceInvertPrompt.jobId, forceInvertPrompt.docId, true)}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 rounded-xl font-extrabold text-xs shadow-lg transition-all cursor-pointer"
+              >
+                Force Invert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* LIGHTBOX INSPECTION MODAL */}
+      {/* ========================================================================= */}
+      {lightboxDoc && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl overflow-hidden flex flex-col shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/60">
+              <div className="flex items-center gap-2">
+                <ZoomIn size={18} className="text-cyan-400" />
+                <span className="font-bold text-sm text-white">{lightboxDoc.title}</span>
+                {lightboxDoc.side && (
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                    {lightboxDoc.side}
+                  </span>
+                )}
+                {lightboxDoc.lowConfidenceCrop && (
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    ⚠️ Heuristic Fallback Crop
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setLightboxDoc(null)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer">
+                <XCircle size={20} />
+              </button>
+            </div>
+            <div className="p-6 bg-slate-950 flex items-center justify-center max-h-[70vh] overflow-auto">
+              <img src={lightboxDoc.url} alt="Inspect full" className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-xl border border-slate-800" />
+            </div>
+            {lightboxDoc.lowConfidenceCrop && (
+              <div className="px-5 py-2.5 bg-amber-500/10 border-t border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
+                <AlertTriangle size={15} className="shrink-0" />
+                <span>Notice: This card used fallback edge trimming. If background borders are visible, use the rotate/crop controls before printing.</span>
+              </div>
+            )}
           </div>
         </div>
       )}

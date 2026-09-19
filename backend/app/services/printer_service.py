@@ -26,7 +26,7 @@ def print_file(file_path: str, printer_name: str = None) -> bool:
     try:
         # win32api.ShellExecute(hwnd, op, file, params, dir, bShow)
         # Using 'printto' verb to print to a specific printer
-        win32api.ShellExecute(
+        res = win32api.ShellExecute(
             0,
             "printto",
             file_path,
@@ -34,6 +34,10 @@ def print_file(file_path: str, printer_name: str = None) -> bool:
             ".",
             0
         )
+        # ShellExecute returns an HINSTANCE > 32 on success. A value <= 32 indicates an error.
+        if int(res) <= 32:
+            print(f"ShellExecute failed with code: {res}")
+            return False
         return True
     except Exception as e:
         print(f"Failed to dispatch to printer: {e}")

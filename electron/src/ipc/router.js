@@ -160,7 +160,7 @@ function registerIpcHandlers() {
 
             // Update SQLite
             const db = sqliteDb.getDb();
-            db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ?").run(staged.localPath, job.id);
+            db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ? AND item_index = 0").run(staged.localPath, job.id);
 
             const buffer = await fs.promises.readFile(staged.localPath);
             const ext = staged.localPath.endsWith(".png") ? "png" : staged.localPath.endsWith(".webp") ? "webp" : "jpeg";
@@ -234,7 +234,7 @@ function registerIpcHandlers() {
                         });
 
                         const db = sqliteDb.getDb();
-                        db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ? AND item_index = ?").run(staged.localPath, job.id, idx + 1);
+                        db.prepare("UPDATE job_items SET original_path = ?, status = 'READY' WHERE job_id = ? AND item_index = ?").run(staged.localPath, job.id, idx);
 
                         const buffer = await fs.promises.readFile(staged.localPath);
                         const ext = staged.localPath.endsWith(".png") ? "png" : staged.localPath.endsWith(".webp") ? "webp" : staged.localPath.endsWith(".pdf") ? "pdf" : "jpeg";

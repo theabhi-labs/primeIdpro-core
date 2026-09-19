@@ -125,26 +125,27 @@ class OnlineJobAdapter {
 
         // Stage all photos asynchronously
         const stagedItems = [];
-        for (const item of rawItems) {
-            const downloadUrl = item.downloadUrl || item.photoUrl || centralJob.temporaryPhotoUrl || centralJob.photoUrl;
+        for (let idx = 0; idx < rawItems.length; idx++) {
+            const item = rawItems[idx];
+            const downloadUrl = item.downloadUrl || item.photoUrl || (idx === 0 ? (centralJob.temporaryPhotoUrl || centralJob.photoUrl) : null);
             if (downloadUrl) {
                 try {
                     const staged = await photoStager.stageRemotePhoto({
                         downloadUrl,
                         jobId: localJob.id,
-                        photoIndex: item.photoIndex || 1,
-                        originalFileName: item.originalFileName || "customer_photo.jpg"
+                        photoIndex: idx + 1,
+                        originalFileName: item.originalFileName || `customer_photo_${idx + 1}.jpg`
                     });
 
-                    // Update job_items in SQLite
+                    // Update job_items in SQLite for the exact item_index
                     db.prepare(`
                         UPDATE job_items 
                         SET original_path = ?, status = 'READY'
-                        WHERE job_id = ?
-                    `).run(staged.localPath, localJob.id);
+                        WHERE job_id = ? AND item_index = ?
+                    `).run(staged.localPath, localJob.id, idx);
 
                     stagedItems.push({
-                        photoIndex: item.photoIndex || 1,
+                        photoIndex: idx + 1,
                         localPath: staged.localPath,
                         copies: item.copies || 1,
                         bgColor: item.backgroundColor || "#FFFFFF"
@@ -152,14 +153,14 @@ class OnlineJobAdapter {
                 } catch (stageErr) {
                     logger.error("PHOTO_STAGING_ERROR", {
                         localJobId: localJob.id,
-                        photoIndex: item.photoIndex,
+                        photoIndex: idx + 1,
                         error: stageErr.message
                     });
                     db.prepare(`
                         UPDATE job_items 
                         SET status = 'FAILED', error = ?
                         WHERE job_id = ? AND item_index = ?
-                    `).run(stageErr.message, localJob.id, item.photoIndex || 1);
+                    `).run(stageErr.message, localJob.id, idx);
                 }
             }
         }

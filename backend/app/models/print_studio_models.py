@@ -15,6 +15,7 @@ class PrintDocument(BaseModel):
     status: Optional[str] = "matched"
     isDarkPage: bool = False
     pageCount: int = 1
+    lowConfidenceCrop: bool = False
 
 class PrintJob(BaseModel):
     id: str
