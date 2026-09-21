@@ -55,7 +55,7 @@ def generate_composite(front_path: str, back_path: str, output_path: str, mode: 
 
                 # Add subtle cutting guides (1px light gray border)
                 cv2.rectangle(canvas, (x_start, y_start), (x_start+id_w, y_start+id_h), (210, 215, 220), 1)
-                cv2.rectangle(canvas, (x_back, y_start), (x_back+id_w, y_start+id_h), (210, 215, 220), 1)
+                cv2.rectangle(canvas, (x_back, y_start), (x_back+id_w, y_back+id_h), (210, 215, 220), 1)
             else:
                 # Single card
                 single_img = front_img if front_img is not None else back_img
@@ -90,9 +90,9 @@ def generate_composite(front_path: str, back_path: str, output_path: str, mode: 
         print(f"Error generating composite: {e}")
         return False
 
-def generate_single_print(image_path: str, output_path: str) -> bool:
+def generate_single_print(image_path: str, output_path: str, is_id_card: bool = False) -> bool:
     """
-    Places a single image (e.g. general document) on A4 canvas at 300 DPI.
+    Places a single image (e.g. general document or single card) on A4 canvas at 300 DPI.
     """
     try:
         canvas = Image.new('RGB', (A4_WIDTH_300DPI, A4_HEIGHT_300DPI), 'white')
@@ -101,17 +101,23 @@ def generate_single_print(image_path: str, output_path: str) -> bool:
             with Image.open(image_path) as img:
                 img = img.convert('RGB')
                 
-                # Check if it's already an ID Card aspect ratio -> print at standard 85.6x54mm
-                aspect = img.width / img.height if img.height > 0 else 1.0
-                if 1.30 <= aspect <= 1.85:
+                aspect = img.width / float(img.height) if img.height > 0 else 1.0
+                
+                # If exact CR80 size (1011x638) or explicitly marked as ID card
+                if is_id_card or (img.width == ID_WIDTH_300DPI and img.height == ID_HEIGHT_300DPI) or (1.45 <= aspect <= 1.70 and img.width <= 1200):
                     id_resized = img.resize((ID_WIDTH_300DPI, ID_HEIGHT_300DPI), Image.Resampling.LANCZOS)
                     x = (A4_WIDTH_300DPI - ID_WIDTH_300DPI) // 2
                     y = 200
                     canvas.paste(id_resized, (x, y))
+                    
+                    # Add cutting border guide
+                    canvas_np = np.array(canvas)
+                    cv2.rectangle(canvas_np, (x, y), (x + ID_WIDTH_300DPI, y + ID_HEIGHT_300DPI), (210, 215, 220), 1)
+                    canvas = Image.fromarray(canvas_np)
                 else:
-                    # General full document
-                    max_w = A4_WIDTH_300DPI - 200
-                    max_h = A4_HEIGHT_300DPI - 200
+                    # Full-size document (Marksheet, Stamp Paper, Certificate, Passbook)
+                    max_w = A4_WIDTH_300DPI - 160  # ~13mm margin
+                    max_h = A4_HEIGHT_300DPI - 160
                     img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
                     x = (A4_WIDTH_300DPI - img.width) // 2
                     y = (A4_HEIGHT_300DPI - img.height) // 2
@@ -180,5 +186,3 @@ def generate_multipage_pdf(front_path: str, back_path: str, output_path: str) ->
     except Exception as e:
         print(f"Error generating multipage pdf: {e}")
         return False
-
-
