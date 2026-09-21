@@ -14,7 +14,7 @@ ID_HEIGHT_300DPI = 638
 
 def generate_composite(front_path: str, back_path: str, output_path: str, mode: str = "side-by-side") -> bool:
     """
-    Generates A4 300 DPI print canvas.
+    Generates A4 300 DPI print canvas for ID Cards.
     - mode="side-by-side" (Default): Front on Left, Back on Right (Standard ID Size: 85.6mm x 54.0mm each).
     - mode="stacked": Front on Top, Back on Bottom.
     """
@@ -55,9 +55,9 @@ def generate_composite(front_path: str, back_path: str, output_path: str, mode: 
 
                 # Add subtle cutting guides (1px light gray border)
                 cv2.rectangle(canvas, (x_start, y_start), (x_start+id_w, y_start+id_h), (210, 215, 220), 1)
-                cv2.rectangle(canvas, (x_back, y_start), (x_back+id_w, y_back+id_h), (210, 215, 220), 1)
+                cv2.rectangle(canvas, (x_back, y_start), (x_back+id_w, y_start+id_h), (210, 215, 220), 1)
             else:
-                # Single card
+                # Single card at top center
                 single_img = front_img if front_img is not None else back_img
                 x_start = (A4_WIDTH_300DPI - id_w) // 2
                 y_start = 200
@@ -92,7 +92,13 @@ def generate_composite(front_path: str, back_path: str, output_path: str, mode: 
 
 def generate_single_print(image_path: str, output_path: str, is_id_card: bool = False) -> bool:
     """
-    Places a single image (e.g. general document or single card) on A4 canvas at 300 DPI.
+    Places an image on A4 canvas at 300 DPI.
+    - If is_id_card=True: Scales to physical CR80 dimensions (1011x638px = 85.6x54mm) at top of A4 with cutting guide.
+    - If is_id_card=False (Full-size documents, Marksheets, Passbooks, Certificates, Stamp Papers):
+      - If Landscape (Aspect > 1.05, e.g. Passbook, Landscape Certificate):
+        Spans FULL HORIZONTAL WIDTH (2320px with 10mm margins) at top/center of A4!
+      - If Portrait (Aspect <= 1.05, e.g. Marksheet, Stamp Paper, Portrait Certificate):
+        Scales to fit full printable A4 page (max width 2280px, max height 3300px), centered with clean margins!
     """
     try:
         canvas = Image.new('RGB', (A4_WIDTH_300DPI, A4_HEIGHT_300DPI), 'white')
@@ -100,28 +106,53 @@ def generate_single_print(image_path: str, output_path: str, is_id_card: bool = 
         if image_path and os.path.exists(image_path):
             with Image.open(image_path) as img:
                 img = img.convert('RGB')
-                
                 aspect = img.width / float(img.height) if img.height > 0 else 1.0
                 
-                # If exact CR80 size (1011x638) or explicitly marked as ID card
-                if is_id_card or (img.width == ID_WIDTH_300DPI and img.height == ID_HEIGHT_300DPI) or (1.45 <= aspect <= 1.70 and img.width <= 1200):
+                if is_id_card:
+                    # Physical CR80 Card (85.6mm x 54.0mm)
                     id_resized = img.resize((ID_WIDTH_300DPI, ID_HEIGHT_300DPI), Image.Resampling.LANCZOS)
                     x = (A4_WIDTH_300DPI - ID_WIDTH_300DPI) // 2
                     y = 200
                     canvas.paste(id_resized, (x, y))
                     
-                    # Add cutting border guide
+                    # Add subtle cutting border guide
                     canvas_np = np.array(canvas)
                     cv2.rectangle(canvas_np, (x, y), (x + ID_WIDTH_300DPI, y + ID_HEIGHT_300DPI), (210, 215, 220), 1)
                     canvas = Image.fromarray(canvas_np)
                 else:
-                    # Full-size document (Marksheet, Stamp Paper, Certificate, Passbook)
-                    max_w = A4_WIDTH_300DPI - 160  # ~13mm margin
-                    max_h = A4_HEIGHT_300DPI - 160
-                    img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
-                    x = (A4_WIDTH_300DPI - img.width) // 2
-                    y = (A4_HEIGHT_300DPI - img.height) // 2
-                    canvas.paste(img, (x, y))
+                    # Full-size document / Passbook / Marksheet / Certificate / Stamp Paper
+                    if aspect > 1.05:
+                        # Landscape / Horizontal Document (e.g. Bank Passbook, Horizontal Certificate)
+                        # Spans FULL HORIZONTAL WIDTH across A4 (2320px width = 10mm left/right margins)
+                        target_w = A4_WIDTH_300DPI - 160  # 2320px
+                        target_h = int(target_w / aspect)
+                        
+                        # Guard against overflow if aspect is close to square
+                        if target_h > (A4_HEIGHT_300DPI - 160):
+                            target_h = A4_HEIGHT_300DPI - 160
+                            target_w = int(target_h * aspect)
+                            
+                        resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                        x = (A4_WIDTH_300DPI - target_w) // 2
+                        y = 120  # ~10mm from top
+                        canvas.paste(resized, (x, y))
+                    else:
+                        # Portrait A4 Document (Marksheet, Stamp Paper, Certificate, Letter)
+                        # Fits full printable A4 page
+                        max_w = A4_WIDTH_300DPI - 160  # ~13mm margin
+                        max_h = A4_HEIGHT_300DPI - 160
+                        
+                        scale_w = max_w / float(img.width)
+                        scale_h = max_h / float(img.height)
+                        scale = min(scale_w, scale_h)
+                        
+                        target_w = int(img.width * scale)
+                        target_h = int(img.height * scale)
+                        
+                        resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                        x = (A4_WIDTH_300DPI - target_w) // 2
+                        y = (A4_HEIGHT_300DPI - target_h) // 2
+                        canvas.paste(resized, (x, y))
                 
                 canvas.save(output_path, dpi=(300, 300), quality=96)
                 return True
@@ -132,7 +163,7 @@ def generate_single_print(image_path: str, output_path: str, is_id_card: bool = 
 
 def render_pdf_first_page(pdf_path: str, output_path: str) -> bool:
     """
-    Renders page 1 of a PDF file to an image for preview and printing.
+    Renders page 1 of a PDF file to an image for preview and printing at full 300 DPI A4.
     """
     try:
         if not os.path.exists(pdf_path):

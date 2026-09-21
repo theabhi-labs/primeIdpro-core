@@ -979,7 +979,8 @@ const PrintStudioWorkspace = ({
                           <div className="flex items-center justify-between w-full text-xs text-slate-400 px-1">
                             <span className="font-bold text-slate-300 flex items-center gap-1.5">
                               <Sparkles size={13} className="text-cyan-400" />
-                              {activePreview.docTypeLabel || 'Document'} (Group: {activePreview.groupId})
+                              {activePreview.docTypeLabel || 'Document'} 
+                              {activePreview.type === 'composite' && activePreview.groupId ? ` (Group: ${activePreview.groupId})` : ''}
                             </span>
                             <span className="font-mono text-[11px] text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/50">
                               Sheet {(activeIdx + 1)} of {previewModal.previews.length} (300 DPI A4)
@@ -996,7 +997,11 @@ const PrintStudioWorkspace = ({
 
                             {/* Dimension Overlay Badge */}
                             <div className="absolute bottom-2 right-2 bg-slate-900/90 backdrop-blur text-white text-[10px] font-mono px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-2 shadow-lg">
-                              <span className="text-cyan-400 font-semibold">CR80: 85.6 × 54.0 mm</span>
+                              <span className="text-cyan-400 font-semibold">
+                                {activePreview.type === 'full-page' || activePreview.type === 'pdf' || activePreview.type === 'single'
+                                  ? 'Full Page A4: 210 × 297 mm (Horizontal Fit)' 
+                                  : 'CR80 Card: 85.6 × 54.0 mm'}
+                              </span>
                               <span className="text-slate-500">|</span>
                               <span className="text-emerald-400">300 DPI Scanner Crisp</span>
                               <span className="text-slate-500">|</span>

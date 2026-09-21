@@ -376,10 +376,20 @@ def trim_card_margins(img_bgr: np.ndarray, tol: int = 240) -> np.ndarray:
 def extract_id_code(image_np: np.ndarray) -> tuple[str, str]:
     """
     Extracts text via OCR and looks for ID-like patterns if tesseract is available.
+    Uses downscaled image and fast timeout to guarantee instantaneous response.
     """
+    if image_np is None or image_np.size == 0:
+        return None, ""
     try:
-        pil_img = Image.fromarray(cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB))
-        text = pytesseract.image_to_string(pil_img)
+        h, w = image_np.shape[:2]
+        if max(h, w) > 1000:
+            scale = 1000.0 / max(h, w)
+            small = cv2.resize(image_np, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            pil_img = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+        else:
+            pil_img = Image.fromarray(cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB))
+
+        text = pytesseract.image_to_string(pil_img, timeout=2.0)
         text_clean = re.sub(r'[^A-Z0-9]', '', text.upper())
 
         digit_match = re.search(r'\d{8,12}', text_clean)
@@ -479,20 +489,22 @@ def get_doc_type_label(text: str = "", img: np.ndarray = None) -> str:
 def detect_eaadhaar_full_letter(img_bgr: np.ndarray, face_cascade=None) -> tuple[bool, int]:
     """
     Detects if the file is an official A4 e-Aadhaar letter with bottom cards.
+    Requires UIDAI official red sunburst flame logo + scissor cut line or bottom tricolor card ribbon.
     Returns (is_eaadhaar, split_y).
     """
     try:
         h, w = img_bgr.shape[:2]
         aspect = w / float(h)
+        # e-Aadhaar official letters are always portrait format (0.42 to 0.88)
         if not (0.42 <= aspect <= 0.88):
             return False, 0
 
-        # Check for UIDAI Red flame logo in top 45%
-        top_hsv = cv2.cvtColor(img_bgr[0:int(h * 0.45), :], cv2.COLOR_BGR2HSV)
-        red1 = np.sum((top_hsv[:, :, 0] <= 10) & (top_hsv[:, :, 1] > 80) & (top_hsv[:, :, 2] > 80))
-        red2 = np.sum((top_hsv[:, :, 0] >= 170) & (top_hsv[:, :, 1] > 80) & (top_hsv[:, :, 2] > 80))
+        # Check for UIDAI Red flame sunburst logo in top 40%
+        top_hsv = cv2.cvtColor(img_bgr[0:int(h * 0.40), :], cv2.COLOR_BGR2HSV)
+        red1 = cv2.inRange(top_hsv, (0, 90, 90), (10, 255, 255))
+        red2 = cv2.inRange(top_hsv, (170, 90, 90), (180, 255, 255))
         top_area = top_hsv.shape[0] * top_hsv.shape[1]
-        red_ratio = (red1 + red2) / float(max(1, top_area))
+        red_ratio = (cv2.countNonZero(red1) + cv2.countNonZero(red2)) / float(max(1, top_area))
 
         # Check for card face in bottom 40% (y > 0.55H)
         faces = detect_face_rects(img_bgr, face_cascade)
@@ -501,20 +513,26 @@ def detect_eaadhaar_full_letter(img_bgr: np.ndarray, face_cascade=None) -> tuple
         # Scissor line search in [0.55H, 0.72H]
         mid_gray = cv2.cvtColor(img_bgr[int(h * 0.55):int(h * 0.72), :], cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(mid_gray, 50, 150)
-        row_sums = np.sum(edges > 0, axis=1) / float(w)
-        peak = np.argmax(row_sums)
-        has_cut_line = row_sums[peak] > 0.38
-        split_y = int(h * 0.55) + peak if has_cut_line else int(h * 0.62)
+        row_sums = cv2.reduce(edges, 1, cv2.REDUCE_SUM, dtype=cv2.CV_32F).flatten() / (255.0 * w)
+        peak = row_sums.max()
+        has_cut_line = peak > 0.38
+        split_y = int(h * 0.55) + np.argmax(row_sums) if has_cut_line else int(h * 0.62)
 
-        # Check bottom tricolor
+        # Check bottom tricolor (Aadhaar cards at bottom have green and saffron stripes)
         bot_hsv = cv2.cvtColor(img_bgr[int(h * 0.60):, :], cv2.COLOR_BGR2HSV)
-        bot_green = np.sum((bot_hsv[:, :, 0] >= 35) & (bot_hsv[:, :, 0] <= 85) & (bot_hsv[:, :, 1] > 40))
-        bot_saffron = np.sum((bot_hsv[:, :, 0] >= 5) & (bot_hsv[:, :, 0] <= 25) & (bot_hsv[:, :, 1] > 50))
-        has_bot_tricolor = (bot_green > 600 and bot_saffron > 600)
+        bot_green = cv2.inRange(bot_hsv, (35, 40, 40), (85, 255, 255))
+        bot_saffron = cv2.inRange(bot_hsv, (5, 50, 50), (25, 255, 255))
+        g_cnt = cv2.countNonZero(bot_green)
+        s_cnt = cv2.countNonZero(bot_saffron)
+        has_bot_tricolor = (g_cnt > 1200 and s_cnt > 1500)
 
-        if (red_ratio > 0.005 and (len(bot_faces) >= 1 or has_bot_tricolor or has_cut_line)):
+        # Check for QR code in bottom right card
+        has_bot_qr = detect_qr_code(img_bgr[int(h * 0.60):, int(w * 0.45):])
+
+        # UIDAI e-Aadhaar MUST have UIDAI red logo AND (cut line + (bot_face or bot_qr or bot_tricolor))
+        if red_ratio > 0.008 and (has_cut_line and (len(bot_faces) >= 1 or has_bot_qr or has_bot_tricolor)):
             return True, split_y
-        if red_ratio > 0.02 and (len(bot_faces) >= 1 or has_bot_tricolor):
+        if red_ratio > 0.015 and (has_bot_tricolor and (len(bot_faces) >= 1 or has_bot_qr)):
             return True, split_y
 
         return False, 0
@@ -592,45 +610,57 @@ def extract_eaadhaar_bottom_cards(img_bgr: np.ndarray, split_y: int, upload_dir:
 
 def detect_full_page_document(img_bgr: np.ndarray) -> tuple[bool, str]:
     """
-    Identifies full-size documents (Marksheets, Stamp Papers, Certificates, Passbooks, General Receipts).
+    Identifies full-size documents (Bank Passbooks, Marksheets, Stamp Papers, Certificates, Receipts).
     """
     try:
         h, w = img_bgr.shape[:2]
         aspect = w / float(h)
-        if not (0.42 <= aspect <= 1.08 or 1.10 <= aspect <= 1.75):
+        if not (0.40 <= aspect <= 1.05 or 1.10 <= aspect <= 1.95):
             return False, ""
 
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(w * 0.06)), 1))
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(12, int(w * 0.05)), 1))
         h_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
         row_sums = np.sum(h_lines > 0, axis=1) / float(w)
-        active_rows = np.where(row_sums > 0.03)[0]
-
-        if len(active_rows) < 10:
-            return False, ""
-
-        y_span = (active_rows[-1] - active_rows[0]) / float(h)
-        if y_span < 0.50:
-            return False, ""
+        active_rows = np.where(row_sums > 0.025)[0]
+        h_line_count = np.sum(row_sums > 0.12)
 
         top_hsv = cv2.cvtColor(img_bgr[0:int(h * 0.35), :], cv2.COLOR_BGR2HSV)
-        stamp_g = np.sum((top_hsv[:, :, 0] >= 35) & (top_hsv[:, :, 0] <= 85) & (top_hsv[:, :, 1] > 40))
-        stamp_o = np.sum((top_hsv[:, :, 0] >= 10) & (top_hsv[:, :, 0] <= 25) & (top_hsv[:, :, 1] > 50))
+        stamp_g = np.sum((top_hsv[:, :, 0] >= 35) & (top_hsv[:, :, 0] <= 85) & (top_hsv[:, :, 1] > 60) & (top_hsv[:, :, 2] > 60))
+        stamp_o = np.sum((top_hsv[:, :, 0] >= 10) & (top_hsv[:, :, 0] <= 25) & (top_hsv[:, :, 1] > 70) & (top_hsv[:, :, 2] > 70))
         top_area = top_hsv.shape[0] * top_hsv.shape[1]
-        is_stamp = (stamp_g / float(top_area) > 0.07) or (stamp_o / float(top_area) > 0.07)
+        is_stamp_paper = (stamp_g / float(top_area) > 0.10) or (stamp_o / float(top_area) > 0.10)
 
-        h_line_rows = np.sum(row_sums > 0.18)
-
-        if is_stamp:
+        # 1. Stamp Paper (High saturation official seal / crest at top)
+        if is_stamp_paper and aspect < 1.05:
             return True, "Stamp Paper"
-        elif 1.18 <= aspect <= 1.55:
-            return True, "Bank Passbook"
-        elif h_line_rows >= 4:
+
+        # 2. Bank Passbook (Landscape aspect 1.10 - 1.85 with account tables or statement details)
+        if 1.10 <= aspect <= 1.85:
+            if h_line_count >= 2 or len(active_rows) >= 8 or 1.15 <= aspect <= 1.55:
+                return True, "Bank Passbook"
+
+        # 3. Marksheet (Vertical A4 format with marks grid / table lines)
+        if h_line_count >= 5 and aspect <= 1.05:
             return True, "Marksheet"
-        else:
-            return True, "Certificate"
+
+        # 4. General Certificate / Full A4 Document / Open Passbook photo
+        if len(active_rows) >= 12:
+            y_span = (active_rows[-1] - active_rows[0]) / float(h)
+            if y_span > 0.40:
+                if 1.10 <= aspect <= 1.80:
+                    return True, "Bank Passbook" if h_line_count >= 2 else "Certificate"
+                elif aspect <= 1.05:
+                    if h_line_count >= 3:
+                        return True, "Marksheet"
+                    elif is_stamp_paper:
+                        return True, "Stamp Paper"
+                    else:
+                        return True, "Bank Passbook" if (0.65 <= aspect <= 0.85 and h_line_count >= 2) else "Certificate"
+
+        return False, ""
     except Exception:
         return False, ""
 
@@ -663,8 +693,8 @@ def process_full_page_document(img_bgr: np.ndarray, doc_label: str, upload_dir: 
 def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None) -> list[dict]:
     """
     Master Autonomous Document Engine:
-    1. e-Aadhaar Letters: Automatically isolates bottom-left (Front) and bottom-right (Back) and pairs them.
-    2. Full-Size Documents (Marksheet, Stamp Paper, Certificate, Passbook): Preserved in full A4 with 300 DPI enhancement.
+    1. Full-Size Documents (Marksheet, Stamp Paper, Certificate, Passbook): Preserved in full A4 width with 300 DPI enhancement.
+    2. e-Aadhaar Letters: Automatically isolates bottom-left (Front) and bottom-right (Back) and pairs them.
     3. Isolated Card Boxes on Background (Bedsheets, Tables, Tilted Photos): 4-Point Deskew + CR80 300 DPI Scanner Filter.
     4. PAN Cards: Strictly protected from false splitting (always 1 single front card).
     5. Dual 2-in-1 Cards: Auto-segments 2 distinct cards and links them.
@@ -721,22 +751,23 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
     aspect_ratio = w / h if h > 0 else 1.0
     group_id = str(uuid.uuid4())[:8]
 
-    # Pre-extract OCR text if available
+    # Pre-extract OCR text if available (downscaled and fast)
     full_code, full_text = extract_id_code(img)
 
     # =========================================================================
-    # STEP 1: CHECK FOR E-AADHAAR FULL LETTER (A4 UIDAI Official Letter)
-    # =========================================================================
-    is_eaadhaar, split_y = detect_eaadhaar_full_letter(img, face_cascade)
-    if is_eaadhaar:
-        return extract_eaadhaar_bottom_cards(img, split_y, upload_dir, group_id, face_cascade)
-
-    # =========================================================================
-    # STEP 2: CHECK FOR FULL-PAGE DOCUMENTS (Marksheet, Stamp Paper, Certificate, Passbook)
+    # STEP 1: CHECK FOR FULL-PAGE DOCUMENTS (Marksheet, Stamp Paper, Certificate, Passbook)
+    # Checked first so passbooks & marksheets are never falsely split into cards!
     # =========================================================================
     is_full_page, doc_label = detect_full_page_document(img)
     if is_full_page:
         return process_full_page_document(img, doc_label, upload_dir, group_id)
+
+    # =========================================================================
+    # STEP 2: CHECK FOR E-AADHAAR FULL LETTER (A4 UIDAI Official Letter)
+    # =========================================================================
+    is_eaadhaar, split_y = detect_eaadhaar_full_letter(img, face_cascade)
+    if is_eaadhaar:
+        return extract_eaadhaar_bottom_cards(img, split_y, upload_dir, group_id, face_cascade)
 
     # =========================================================================
     # STEP 3: CHECK FOR ISOLATED ID CARD BOXES ON BACKGROUND (Camera Photos on Bedsheets/Tables)

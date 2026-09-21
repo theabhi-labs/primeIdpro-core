@@ -168,6 +168,7 @@ async def update_job_combine_mode(job_id: str, payload: dict):
 async def get_job_preview(job_id: str, combine_mode: Optional[str] = None):
     """
     Generates preview sheets for each group in the job and returns their image URLs.
+    Correctly sizes ID Cards (CR80) vs Full A4 General Documents (Bank Passbooks, Marksheets, Certificates).
     """
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -197,7 +198,8 @@ async def get_job_preview(job_id: str, combine_mode: Optional[str] = None):
         front_path = os.path.join(UPLOAD_DIR, os.path.basename(front_doc.fileUrl)) if front_doc and front_doc.fileUrl else None
         back_path = os.path.join(UPLOAD_DIR, os.path.basename(back_doc.fileUrl)) if back_doc and back_doc.fileUrl else None
         
-        if front_doc or back_doc:
+        if front_doc and back_doc:
+            # Both front and back cards present (CR80 ID composite layout)
             preview_name = f"preview_{job_id}_{gid}_{mode}.jpg"
             preview_path = os.path.join(UPLOAD_DIR, preview_name)
             
@@ -207,15 +209,33 @@ async def get_job_preview(job_id: str, combine_mode: Optional[str] = None):
                     "groupId": gid,
                     "previewUrl": f"/uploads/{preview_name}",
                     "combineMode": mode,
-                    "front": front_doc.model_dump(mode="json") if front_doc else None,
-                    "back": back_doc.model_dump(mode="json") if back_doc else None,
-                    "docTypeLabel": (front_doc.docTypeLabel if front_doc else (back_doc.docTypeLabel if back_doc else "ID Document")),
+                    "front": front_doc.model_dump(mode="json"),
+                    "back": back_doc.model_dump(mode="json"),
+                    "docTypeLabel": front_doc.docTypeLabel or "ID Card",
                     "type": "composite"
+                })
+        elif front_doc or back_doc:
+            # Single ID card side (e.g. Single PAN Card or single Aadhaar side)
+            single_doc = front_doc or back_doc
+            single_path = front_path or back_path
+            preview_name = f"preview_single_card_{job_id}_{gid}.jpg"
+            preview_path = os.path.join(UPLOAD_DIR, preview_name)
+            
+            success = generate_single_print(single_path, preview_path, is_id_card=True)
+            if success:
+                previews.append({
+                    "groupId": gid,
+                    "previewUrl": f"/uploads/{preview_name}",
+                    "combineMode": mode,
+                    "front": single_doc.model_dump(mode="json"),
+                    "back": None,
+                    "docTypeLabel": single_doc.docTypeLabel or "ID Card",
+                    "type": "single-card"
                 })
                 
         for u_doc in g["unclassified"]:
             u_path = os.path.join(UPLOAD_DIR, os.path.basename(u_doc.fileUrl)) if u_doc.fileUrl else None
-            preview_name = f"preview_single_{u_doc.id}.jpg"
+            preview_name = f"preview_fullpage_{u_doc.id}.jpg"
             preview_path = os.path.join(UPLOAD_DIR, preview_name)
             
             if u_doc.fileType == "pdf" and u_path and os.path.exists(u_path):
@@ -228,13 +248,15 @@ async def get_job_preview(job_id: str, combine_mode: Optional[str] = None):
                         "type": "pdf"
                     })
             elif u_path and os.path.exists(u_path):
-                if generate_single_print(u_path, preview_path):
+                # Full page document (Bank Passbook, Marksheet, Stamp Paper, Certificate, Receipt)
+                # is_id_card=False renders landscape documents across FULL HORIZONTAL WIDTH (2320px) of A4!
+                if generate_single_print(u_path, preview_path, is_id_card=False):
                     previews.append({
                         "groupId": gid,
                         "previewUrl": f"/uploads/{preview_name}",
                         "document": u_doc.model_dump(mode="json"),
                         "docTypeLabel": u_doc.docTypeLabel or "General Document",
-                        "type": "single"
+                        "type": "full-page"
                     })
                     
     return JSONResponse({"success": True, "previews": previews, "combineMode": mode, "job": job.model_dump(mode="json")})
@@ -358,7 +380,7 @@ async def execute_print_job(job_id: str, printer_name: str = None):
             front_path = os.path.join(UPLOAD_DIR, os.path.basename(front_doc.fileUrl)) if front_doc and front_doc.fileUrl else None
             back_path = os.path.join(UPLOAD_DIR, os.path.basename(back_doc.fileUrl)) if back_doc and back_doc.fileUrl else None
             
-            if front_doc or back_doc:
+            if front_doc and back_doc:
                 if job_combine_mode == "two-page":
                     if global_settings.duplexSupported:
                         output_name = f"duplex_{gid}.pdf"
@@ -375,7 +397,7 @@ async def execute_print_job(job_id: str, printer_name: str = None):
                         if front_path:
                             output_name = f"single_{gid}_front.jpg"
                             output_path = os.path.join(UPLOAD_DIR, output_name)
-                            if generate_single_print(front_path, output_path):
+                            if generate_single_print(front_path, output_path, is_id_card=True):
                                 print_success = print_file(output_path, p_name)
                                 if os.path.exists(output_path):
                                     os.remove(output_path)
@@ -393,6 +415,18 @@ async def execute_print_job(job_id: str, printer_name: str = None):
                         if not print_success:
                             job.status = "failed"
                             raise HTTPException(status_code=500, detail=f"Failed to dispatch composite print to printer '{p_name}'. Please verify printer connection and settings.")
+            elif front_doc or back_doc:
+                # Single ID Card Print
+                single_path = front_path or back_path
+                output_name = f"single_card_{gid}.jpg"
+                output_path = os.path.join(UPLOAD_DIR, output_name)
+                if generate_single_print(single_path, output_path, is_id_card=True):
+                    print_success = print_file(output_path, p_name)
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    if not print_success:
+                        job.status = "failed"
+                        raise HTTPException(status_code=500, detail=f"Failed to dispatch single card print to printer '{p_name}'. Please verify printer connection and settings.")
                         
             for u_doc in g["unclassified"]:
                 u_path = os.path.join(UPLOAD_DIR, os.path.basename(u_doc.fileUrl)) if u_doc.fileUrl else None
@@ -405,9 +439,9 @@ async def execute_print_job(job_id: str, printer_name: str = None):
                         job.status = "failed"
                         raise HTTPException(status_code=500, detail=f"Failed to dispatch PDF document to printer '{p_name}'. Please verify printer connection and settings.")
                 else:
-                    output_name = f"single_{u_doc.id}.jpg"
+                    output_name = f"single_doc_{u_doc.id}.jpg"
                     output_path = os.path.join(UPLOAD_DIR, output_name)
-                    if generate_single_print(u_path, output_path):
+                    if generate_single_print(u_path, output_path, is_id_card=False):
                         print_success = print_file(output_path, p_name)
                         if os.path.exists(output_path):
                             os.remove(output_path)
