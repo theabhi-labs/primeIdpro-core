@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credits Exhausted - Prime ID Pro</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 560px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 36px 30px; text-align: center; border-bottom: 3px solid #f59e0b;">
+              <span style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; margin-bottom: 12px;">
+                ⚠️ Action Required
+              </span>
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+                Your Print Credits Are Exhausted
+              </h1>
+              <p style="margin: 8px 0 0 0; color: #94a3b8; font-size: 13px;">
+                Wallet balance has reached 0 credits
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 36px 32px;">
+              <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px; font-weight: 700;">
+                Hello {{ user_name or user_email or 'Studio Partner' }},
+              </h2>
+              <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 22px;">
+                Your Prime ID Pro credit balance is currently <strong>0 credits</strong>. To prevent any interruptions to your studio photo generation, AI background removal, or PVC ID card printing jobs, please recharge your balance.
+              </p>
+
+              <!-- Warning Callout Box -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+                <tr>
+                  <td>
+                    <div style="color: #b45309; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                      ⚡ Print Queue Paused for AI Processing
+                    </div>
+                    <p style="margin: 0; color: #92400e; font-size: 13px; line-height: 20px;">
+                      High-speed AI features and automated studio print processing require active credits. Recharge now to instantly resume operations.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Recharge CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 28px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="{{ recharge_link or (app_base_url ~ '/recharge') if app_base_url else 'https://primeidpro.online/recharge' }}" style="background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%); color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 28px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);">
+                      ⚡ Recharge Credits Now &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 18px;">
+                If you recently made a payment or have questions regarding your plan, please contact our support team.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #94a3b8; font-size: 12px;">
+                &copy; 2026 Prime ID Pro • <a href="{{ app_base_url or 'https://primeidpro.online' }}" style="color: #0891b2; text-decoration: none;">primeidpro.online</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

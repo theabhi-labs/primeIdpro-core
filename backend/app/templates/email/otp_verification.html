@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Prime ID Pro Account</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 540px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px 30px; text-align: center; border-bottom: 3px solid #06b6d4;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+                PRIME <span style="color: #06b6d4;">ID PRO</span>
+              </h1>
+              <p style="margin: 6px 0 0 0; color: #94a3b8; font-size: 13px; font-weight: 500;">
+                AI Passport &amp; ID Card Print Engine
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 36px 32px;">
+              <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 20px; font-weight: 700;">
+                Verify Your Account
+              </h2>
+              <p style="margin: 0 0 24px 0; color: #475569; font-size: 14px; line-height: 22px;">
+                Hello <strong>{{ user_name or user_email or 'there' }}</strong>, thank you for signing up with Prime ID Pro. Use the verification code below to complete your registration:
+              </p>
+
+              <!-- OTP Code Display Card -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 24px 0;">
+                <tr>
+                  <td align="center" style="background-color: #f8fafc; border: 2px dashed #06b6d4; border-radius: 12px; padding: 20px;">
+                    <span style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 6px;">Your One-Time Verification Code</span>
+                    <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #0891b2; display: inline-block;">{{ otp_code }}</span>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0 0 16px 0; color: #64748b; font-size: 13px; line-height: 20px;">
+                ⏱ This code is valid for <strong>10 minutes</strong>. Do not share this code with anyone.
+              </p>
+
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 18px;">
+                If you did not request this verification, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #94a3b8; font-size: 12px;">
+                &copy; 2026 Prime ID Pro. All rights reserved. • <a href="{{ app_base_url or 'https://primeidpro.online' }}" style="color: #0891b2; text-decoration: none;">primeidpro.online</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

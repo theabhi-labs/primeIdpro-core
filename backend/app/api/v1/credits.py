@@ -49,3 +49,7 @@ async def connect(req: ConnectAccountRequest):
 async def disconnect():
     """Disconnects account."""
     return disconnect_account()
+
+
+# TODO: wire send_welcome_email() and send_payment_invoice_email() here once payment webhook / checkout exists
+

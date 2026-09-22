@@ -21,6 +21,11 @@ class Database:
             await self.client.admin.command("ping")
             logger.info(f"✅ Connected to MongoDB ({self.db_name})")
             db_inst = self.get_database()
+            from beanie import init_beanie
+            from app.models.user import User
+            from app.models.subscription import Subscription
+            await init_beanie(database=db_inst, document_models=[User, Subscription])
+            logger.info("✅ Beanie ODM initialized with User & Subscription document models")
             await self._create_indexes(db_inst)
             return db_inst
         except Exception as e:

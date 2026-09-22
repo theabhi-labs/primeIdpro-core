@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Prime ID Pro</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 560px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 36px 30px; text-align: center; border-bottom: 3px solid #06b6d4;">
+              <span style="background: rgba(6, 182, 212, 0.15); color: #22d3ee; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; border: 1px solid rgba(6, 182, 212, 0.3); display: inline-block; margin-bottom: 12px;">
+                ✨ Account Activated
+              </span>
+              <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">
+                Welcome to PRIME <span style="color: #06b6d4;">ID PRO</span>
+              </h1>
+              <p style="margin: 8px 0 0 0; color: #94a3b8; font-size: 13px;">
+                AI Biometric Studio &amp; Document Print Studio
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 36px 32px;">
+              <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 20px; font-weight: 700;">
+                Hello {{ user_name or user_email or 'Partner' }},
+              </h2>
+              <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 22px;">
+                Your account is now active on the <strong>{{ plan_name or 'Starter' }}</strong> plan. You have full access to high-speed AI background removal, intelligent 300 DPI passport sheets, and PVC ID card layout printing.
+              </p>
+
+              <!-- Feature Highlights Box -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin: 20px 0;">
+                <tr>
+                  <td>
+                    <div style="margin-bottom: 10px; color: #0f172a; font-size: 13px; font-weight: 600;">
+                      🚀 <strong>What you can do now:</strong>
+                    </div>
+                    <ul style="margin: 0; padding-left: 20px; color: #475569; font-size: 13px; line-height: 22px;">
+                      <li>Generate 4x6, 5x7, and A4 300 DPI passport sheets in 1-click.</li>
+                      <li>Scan &amp; auto-split double-sided PVC ID cards (Aadhaar, PAN, Voter).</li>
+                      <li>Pair multiple counter terminals with your QR ordering kiosk.</li>
+                    </ul>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 28px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="{{ app_base_url or 'https://primeidpro.online' }}" style="background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 28px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 12px rgba(6, 182, 212, 0.35);">
+                      Launch Workspace &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 18px;">
+                Need help getting started? Reply directly to this email or visit our help center.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #94a3b8; font-size: 12px;">
+                &copy; 2026 Prime ID Pro • <a href="{{ app_base_url or 'https://primeidpro.online' }}" style="color: #0891b2; text-decoration: none;">primeidpro.online</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

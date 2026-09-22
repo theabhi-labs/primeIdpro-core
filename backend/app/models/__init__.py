@@ -10,6 +10,8 @@ from app.models.image import (
 from app.models.sheet import SheetPDFPhotoItem, SheetPDFRequest
 from app.models.project import SaveProjectRequest
 from app.models.session import SessionCreateResponse, SessionDeleteResponse, SessionStatsResponse
+from app.models.user import User
+from app.models.subscription import Subscription, PLANS
 
 __all__ = [
     "ImageUploadData",
@@ -25,5 +27,8 @@ __all__ = [
     "SessionCreateResponse",
     "SessionDeleteResponse",
     "SessionStatsResponse",
+    "User",
+    "Subscription",
+    "PLANS",
 ]
 

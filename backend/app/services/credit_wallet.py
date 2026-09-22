@@ -312,7 +312,41 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
     wallet.setdefault("transactions", []).append(tx)
     _save_wallet(wallet)
 
-    logger.info(f"✅ Desktop app bound to central platform for {account_id}. Balance: {wallet['credits']}")
+def add_credits(count: int, description: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Tops up the wallet credit balance with the given token count and logs the transaction.
+    """
+    wallet = _load_wallet()
+    current_bal = wallet.get("credits", 0)
+    new_bal = current_bal + count
+    wallet["credits"] = new_bal
+    wallet["cloudBalanceBaseline"] = new_bal
+    wallet["unsettled_debit_tokens"] = 0
+
+    tx = {
+        "id": f"tx_{int(time.time())}_topup",
+        "timestamp": int(time.time()),
+        "type": "TOPUP",
+        "description": description or f"Plan Topup +{count} Credits",
+        "amount": count,
+        "balanceAfter": new_bal,
+    }
+    wallet.setdefault("transactions", []).append(tx)
+    _save_wallet(wallet)
+
+    # Sync to local SQLite state if connected
+    if wallet.get("connectedAccount") and wallet.get("centerCode"):
+        _sync_sqlite_device_state(
+            center_id=wallet.get("deviceToken") or "LOCAL_CENTER",
+            device_id="PIP-DESK-ACTIVE",
+            center_name=wallet.get("connectedAccount"),
+            center_code=wallet.get("centerCode"),
+            wallet_balance=new_bal,
+            account_id=wallet.get("connectedAccount"),
+            machine_id=wallet.get("machineId") or get_machine_hardware_id(),
+        )
+
+    logger.info(f"✅ Wallet topped up +{count} credits. New balance: {new_bal}")
     return get_wallet_status()
 
 
@@ -322,6 +356,11 @@ def deduct_credits(action_type: str, count: int = 1, description: Optional[str] 
     Credits are now managed by Electron's IPC router and CreditManager.
     React frontend now calls window.electronAPI.credits.reserve() directly.
     """
+    wallet = _load_wallet()
+    if wallet.get("credits", 0) <= 0 and wallet.get("connectedAccount"):
+        from app.services.email_service import email_service
+        email_service.send_credits_exhausted_email(user=wallet["connectedAccount"])
+
     logger.warning("deduct_credits called but is deprecated in V1. Use Electron CreditManager via IPC.")
     raise HTTPException(status_code=410, detail="Credit deduction has moved to Electron IPC in V1.")
 

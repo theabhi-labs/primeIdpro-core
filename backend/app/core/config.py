@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     secret_key: str = "primeidpro-secret-key"
     cors_origins: Union[str, List[str]] = "*"
 
+    # Brevo Transactional Email Settings
+    brevo_api_key: str = os.environ.get("BREVO_API_KEY", "")
+    brevo_smtp_user: str = os.environ.get("BREVO_SMTP_USER", "")
+    brevo_smtp_password: str = os.environ.get("BREVO_SMTP_PASSWORD", "")
+    mail_from: str = os.environ.get("MAIL_FROM", "no-reply@primeidpro.online")
+    mail_from_name: str = os.environ.get("MAIL_FROM_NAME", "Prime ID Pro")
+    app_base_url: str = os.environ.get("APP_BASE_URL", "https://primeidpro.online")
+
+    # Razorpay Payment Gateway Settings
+    razorpay_key_id: str = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_PrimeIdProSandbox")
+    razorpay_key_secret: str = os.environ.get("RAZORPAY_KEY_SECRET", "PrimeIdProSecretKey2026")
+    razorpay_webhook_secret: str = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "PrimeIdProWebhookSecret2026")
+
+
     def get_allowed_extensions_list(self) -> List[str]:
         if isinstance(self.allowed_extensions, str):
             return [ext.strip().lower() for ext in self.allowed_extensions.split(",")]

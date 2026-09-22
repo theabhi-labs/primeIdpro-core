@@ -4,6 +4,8 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
+email-validator>=2.0.0
+
 
 # Database
 motor==3.3.2
@@ -27,6 +29,10 @@ python-dateutil==2.8.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 onnxruntime>=1.18.0
+httpx==0.25.1
+aiosmtplib==3.0.1
+razorpay>=2.0.0
+
 
 # Monitoring & Logging
 python-json-logger==2.0.7
