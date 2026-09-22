@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   UploadCloud, Printer, Settings2, Trash2, FileText, Image as ImageIcon, 
   Layout, CheckCircle, AlertTriangle, XCircle, Eye, RefreshCw, ZoomIn, 
-  Layers, Sliders, ChevronRight, Check, Sparkles, FileCheck, Info, Download
+  Layers, Sliders, ChevronRight, ChevronLeft, Check, Sparkles, FileCheck, Info, Download,
+  RotateCw, Wand2, Scan, Crop
 } from 'lucide-react';
 import api from '../../services/api';
 import PrintStudioQrGallery from './PrintStudioQrGallery';
@@ -48,7 +49,30 @@ const PrintStudioWorkspace = ({
   // Lightbox Zoom State
   const [lightboxDoc, setLightboxDoc] = useState(null); // { url, title, side, extractedCode }
 
+  // Interactive Manual Crop State
+  const [manualCropDoc, setManualCropDoc] = useState(null);
+  const [cropPoints, setCropPoints] = useState([
+    { x: 5, y: 5 },
+    { x: 95, y: 5 },
+    { x: 95, y: 95 },
+    { x: 5, y: 95 }
+  ]);
+  const [cropFilterMode, setCropFilterMode] = useState('magic-color');
+  const [isSavingCrop, setIsSavingCrop] = useState(false);
+  const [activeDrag, setActiveDrag] = useState(null);
+  const cropContainerRef = useRef(null);
+
   const fileInputRef = useRef(null);
+
+  const getMediaUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+      return url;
+    }
+    const base = (api?.defaults?.baseURL || '').replace(/\/api\/v1\/?$/, '');
+    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    return `${base}${cleanPath}`;
+  };
 
   // Toast auto-hide
   useEffect(() => {
@@ -97,6 +121,35 @@ const PrintStudioWorkspace = ({
     const interval = setInterval(fetchJobs, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Keyboard navigation for preview modal (Left / Right arrow keys to switch sheets, Esc to close)
+  useEffect(() => {
+    if (!previewModal) return;
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        setPreviewModal(prev => {
+          if (!prev || !prev.previews || prev.previews.length <= 1) return prev;
+          const cur = prev.activeSheetIndex ?? 0;
+          const prevIdx = cur > 0 ? cur - 1 : prev.previews.length - 1;
+          return { ...prev, activeSheetIndex: prevIdx };
+        });
+      } else if (e.key === 'ArrowRight') {
+        setPreviewModal(prev => {
+          if (!prev || !prev.previews || prev.previews.length <= 1) return prev;
+          const cur = prev.activeSheetIndex ?? 0;
+          const nextIdx = cur < prev.previews.length - 1 ? cur + 1 : 0;
+          return { ...prev, activeSheetIndex: nextIdx };
+        });
+      } else if (e.key === 'Escape') {
+        setPreviewModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewModal?.previews?.length]);
 
   const handleManualUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -184,7 +237,24 @@ const PrintStudioWorkspace = ({
           showToast("Colors inverted successfully", "success");
           setForceInvertPrompt(null);
           if (previewModal?.job?.id === jobId) {
-            openReviewModal(previewModal.job);
+            const currentMode = previewModal.combineMode || 'side-by-side';
+            const currentIdx = previewModal.activeSheetIndex ?? 0;
+            const updatedJob = res.data.job || previewModal.job;
+            try {
+              const pRes = await api.get(`/print-studio/jobs/${jobId}/preview?combine_mode=${currentMode}`);
+              if (pRes.data?.success) {
+                setPreviewModal(prev => prev ? ({
+                  ...prev,
+                  job: updatedJob,
+                  previews: pRes.data.previews || [],
+                  loading: false,
+                  combineMode: currentMode,
+                  activeSheetIndex: Math.min(currentIdx, Math.max(0, (pRes.data.previews || []).length - 1))
+                }) : null);
+              }
+            } catch (e) {
+              console.error("Failed to reload preview after invert:", e);
+            }
           }
         }
       } catch (err) {
@@ -197,6 +267,98 @@ const PrintStudioWorkspace = ({
         } else {
           showToast(`Invert failed: ${err.response?.data?.detail || err.message}`, "error");
         }
+      }
+    });
+  };
+
+  const handleRotateDocument = async (jobId, docId, degrees = 90) => {
+    await withLoading(`rotate-${docId}`, async () => {
+      try {
+        const res = await api.post(`/print-studio/jobs/${jobId}/documents/${docId}/rotate?degrees=${degrees}`);
+        if (res.data?.success) {
+          showToast("Document rotated 90°", "success");
+          if (res.data.job) {
+            setJobs(prev => prev.map(j => j.id === jobId ? res.data.job : j));
+          } else {
+            fetchJobs();
+          }
+          if (lightboxDoc && (lightboxDoc.docId === docId || lightboxDoc.id === docId)) {
+            const cleanUrl = lightboxDoc.url.split('?')[0];
+            setLightboxDoc(prev => prev ? ({ ...prev, url: `${cleanUrl}?t=${Date.now()}` }) : null);
+          }
+          if (manualCropDoc && (manualCropDoc.docId === docId || manualCropDoc.id === docId)) {
+            const cleanUrl = manualCropDoc.rawUrl.split('?')[0];
+            setManualCropDoc(prev => prev ? ({ ...prev, rawUrl: `${cleanUrl}?t=${Date.now()}` }) : null);
+          }
+          if (previewModal?.job?.id === jobId) {
+            const currentMode = previewModal.combineMode || 'side-by-side';
+            const currentIdx = previewModal.activeSheetIndex ?? 0;
+            const updatedJob = res.data.job || previewModal.job;
+            try {
+              const pRes = await api.get(`/print-studio/jobs/${jobId}/preview?combine_mode=${currentMode}`);
+              if (pRes.data?.success) {
+                setPreviewModal(prev => prev ? ({
+                  ...prev,
+                  job: updatedJob,
+                  previews: pRes.data.previews || [],
+                  loading: false,
+                  combineMode: currentMode,
+                  activeSheetIndex: Math.min(currentIdx, Math.max(0, (pRes.data.previews || []).length - 1))
+                }) : null);
+              }
+            } catch (e) {
+              console.error("Failed to reload preview after rotate:", e);
+            }
+          }
+        }
+      } catch (err) {
+        showToast(`Rotation failed: ${err.response?.data?.detail || err.message}`, "error");
+      }
+    });
+  };
+
+  const handleEnhanceDocument = async (jobId, docId, mode = "magic-color") => {
+    await withLoading(`enhance-${docId}`, async () => {
+      try {
+        const res = await api.post(`/print-studio/jobs/${jobId}/documents/${docId}/enhance`, { mode });
+        if (res.data?.success) {
+          showToast(`Applied ${mode} scanner filter`, "success");
+          if (res.data.job) {
+            setJobs(prev => prev.map(j => j.id === jobId ? res.data.job : j));
+          } else {
+            fetchJobs();
+          }
+          if (lightboxDoc && (lightboxDoc.docId === docId || lightboxDoc.id === docId)) {
+            const cleanUrl = lightboxDoc.url.split('?')[0];
+            setLightboxDoc(prev => prev ? ({ ...prev, url: `${cleanUrl}?t=${Date.now()}` }) : null);
+          }
+          if (manualCropDoc && (manualCropDoc.docId === docId || manualCropDoc.id === docId)) {
+            const cleanUrl = manualCropDoc.rawUrl.split('?')[0];
+            setManualCropDoc(prev => prev ? ({ ...prev, rawUrl: `${cleanUrl}?t=${Date.now()}` }) : null);
+          }
+          if (previewModal?.job?.id === jobId) {
+            const currentMode = previewModal.combineMode || 'side-by-side';
+            const currentIdx = previewModal.activeSheetIndex ?? 0;
+            const updatedJob = res.data.job || previewModal.job;
+            try {
+              const pRes = await api.get(`/print-studio/jobs/${jobId}/preview?combine_mode=${currentMode}`);
+              if (pRes.data?.success) {
+                setPreviewModal(prev => prev ? ({
+                  ...prev,
+                  job: updatedJob,
+                  previews: pRes.data.previews || [],
+                  loading: false,
+                  combineMode: currentMode,
+                  activeSheetIndex: Math.min(currentIdx, Math.max(0, (pRes.data.previews || []).length - 1))
+                }) : null);
+              }
+            } catch (e) {
+              console.error("Failed to reload preview after enhance:", e);
+            }
+          }
+        }
+      } catch (err) {
+        showToast(`Enhancement failed: ${err.response?.data?.detail || err.message}`, "error");
       }
     });
   };
@@ -251,7 +413,8 @@ const PrintStudioWorkspace = ({
       previews: [],
       loading: true,
       combineMode: mode,
-      selectedPrinter: settings?.printerName || defaultPrinter || ""
+      selectedPrinter: settings?.printerName || defaultPrinter || "",
+      activeSheetIndex: 0
     });
 
     try {
@@ -261,7 +424,8 @@ const PrintStudioWorkspace = ({
           ...prev,
           previews: res.data.previews || [],
           loading: false,
-          combineMode: res.data.combineMode || mode
+          combineMode: res.data.combineMode || mode,
+          activeSheetIndex: 0
         }) : null);
       } else {
         setPreviewModal(prev => prev ? ({ ...prev, loading: false }) : null);
@@ -448,7 +612,8 @@ const PrintStudioWorkspace = ({
           ...prev,
           previews: res.data.previews || [],
           loading: false,
-          combineMode: newMode
+          combineMode: newMode,
+          activeSheetIndex: 0
         }) : null);
       }
       fetchJobs();
@@ -456,6 +621,117 @@ const PrintStudioWorkspace = ({
       console.error("Failed to update combine mode:", err);
       setPreviewModal(prev => prev ? ({ ...prev, loading: false }) : null);
     }
+  };
+
+  const openManualCropModal = (jobId, doc) => {
+    if (!doc) return;
+    const rawTarget = doc.rawFileUrl || doc.fileUrl || doc.url || '';
+    const rawUrl = rawTarget ? (rawTarget.includes('?t=') ? rawTarget : `${rawTarget}?t=${Date.now()}`) : '';
+    let initialPoints = [
+      { x: 5, y: 5 },
+      { x: 95, y: 5 },
+      { x: 95, y: 95 },
+      { x: 5, y: 95 }
+    ];
+    if (doc.cropQuad && Array.isArray(doc.cropQuad) && doc.cropQuad.length === 4) {
+      const maxVal = Math.max(...doc.cropQuad.flat());
+      if (maxVal <= 1.05) {
+        initialPoints = doc.cropQuad.map(([x, y]) => ({ x: Math.max(0, Math.min(100, x * 100)), y: Math.max(0, Math.min(100, y * 100)) }));
+      } else if (maxVal <= 100) {
+        initialPoints = doc.cropQuad.map(([x, y]) => ({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }));
+      }
+    }
+    setCropPoints(initialPoints);
+    setCropFilterMode('magic-color');
+    setManualCropDoc({
+      jobId,
+      docId: doc.id || doc.docId,
+      rawUrl: getMediaUrl(rawUrl),
+      title: doc.docTypeLabel || 'Manual Document Crop',
+      side: doc.side,
+      jobType: doc.jobType
+    });
+  };
+
+  const handleApplyManualCrop = async () => {
+    if (!manualCropDoc) return;
+    setIsSavingCrop(true);
+    try {
+      const normalizedQuad = cropPoints.map(p => [p.x / 100.0, p.y / 100.0]);
+      const res = await api.post(`/print-studio/jobs/${manualCropDoc.jobId}/documents/${manualCropDoc.docId}/crop`, {
+        quad: normalizedQuad,
+        mode: cropFilterMode
+      });
+      
+      if (res.data?.success && res.data?.job) {
+        const updatedJob = res.data.job;
+        setJobs(prevJobs => prevJobs.map(j => j.id === updatedJob.id ? updatedJob : j));
+        showToast("Crop and enhancement applied successfully!", "success");
+        setManualCropDoc(null);
+        
+        if (previewModal && previewModal.job?.id === updatedJob.id) {
+          handleOpenPreview(updatedJob);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to apply manual crop:", err);
+      showToast("Failed to apply crop: " + (err.response?.data?.detail || err.message), "error");
+    } finally {
+      setIsSavingCrop(false);
+    }
+  };
+
+  const handleCropPointerDown = (type, index, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!cropContainerRef.current) return;
+    const rect = cropContainerRef.current.getBoundingClientRect();
+    const startX = ((e.clientX - rect.left) / rect.width) * 100;
+    const startY = ((e.clientY - rect.top) / rect.height) * 100;
+    setActiveDrag({
+      type,
+      index,
+      startX,
+      startY,
+      origPoints: cropPoints.map(p => ({ ...p }))
+    });
+  };
+
+  const handleCropPointerMove = (e) => {
+    if (!activeDrag || !cropContainerRef.current) return;
+    const rect = cropContainerRef.current.getBoundingClientRect();
+    const curX = ((e.clientX - rect.left) / rect.width) * 100;
+    const curY = ((e.clientY - rect.top) / rect.height) * 100;
+    const dx = curX - activeDrag.startX;
+    const dy = curY - activeDrag.startY;
+
+    setCropPoints(prev => {
+      const next = [...prev];
+      if (activeDrag.type === 'corner') {
+        const i = activeDrag.index;
+        next[i] = {
+          x: Math.max(0, Math.min(100, activeDrag.origPoints[i].x + dx)),
+          y: Math.max(0, Math.min(100, activeDrag.origPoints[i].y + dy))
+        };
+      } else if (activeDrag.type === 'edge') {
+        const edgeIdx = activeDrag.index;
+        const i1 = edgeIdx;
+        const i2 = (edgeIdx + 1) % 4;
+        next[i1] = {
+          x: Math.max(0, Math.min(100, activeDrag.origPoints[i1].x + dx)),
+          y: Math.max(0, Math.min(100, activeDrag.origPoints[i1].y + dy))
+        };
+        next[i2] = {
+          x: Math.max(0, Math.min(100, activeDrag.origPoints[i2].x + dx)),
+          y: Math.max(0, Math.min(100, activeDrag.origPoints[i2].y + dy))
+        };
+      }
+      return next;
+    });
+  };
+
+  const handleCropPointerUp = () => {
+    setActiveDrag(null);
   };
 
   const saveSettings = async (e) => {
@@ -744,9 +1020,7 @@ const PrintStudioWorkspace = ({
                   {(expandedJobs[job.id] || expandedJobs[job.id] === undefined) && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-3 border-t border-slate-800/80">
                       {job.documents.map((doc, idx) => {
-                        const fileUrl = doc.fileUrl 
-                          ? (doc.fileUrl.startsWith('http') ? doc.fileUrl : api.defaults.baseURL.replace('/api/v1', '') + doc.fileUrl)
-                          : null;
+                        const fileUrl = doc.fileUrl ? getMediaUrl(doc.fileUrl) : null;
 
                         return (
                           <div 
@@ -762,6 +1036,7 @@ const PrintStudioWorkspace = ({
                                 </div>
                               ) : fileUrl ? (
                                 <img 
+                                  key={fileUrl}
                                   src={fileUrl} 
                                   alt="doc thumbnail" 
                                   className="max-h-full max-w-full object-contain rounded transition-transform group-hover:scale-105 duration-200" 
@@ -805,18 +1080,41 @@ const PrintStudioWorkspace = ({
                               {/* Hover Overlay Actions */}
                               <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 gap-1.5 z-20">
                                 {fileUrl && doc.fileType !== 'pdf' && (
-                                  <button 
-                                    onClick={() => setLightboxDoc({ 
-                                      url: fileUrl, 
-                                      title: doc.docTypeLabel || 'Document Preview',
-                                      side: doc.side,
-                                      extractedCode: doc.extractedCode,
-                                      lowConfidenceCrop: doc.lowConfidenceCrop
-                                    })}
-                                    className="w-full flex items-center justify-center gap-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 py-1 px-2 rounded-lg transition-colors cursor-pointer border border-slate-700"
-                                  >
-                                    <ZoomIn size={12} /> Inspect
-                                  </button>
+                                  <>
+                                    <button 
+                                      onClick={() => openManualCropModal(job.id, doc)}
+                                      className="w-full flex items-center justify-center gap-1 text-[11px] font-bold bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 py-1 px-2 rounded-lg transition-colors cursor-pointer border border-cyan-500/40"
+                                      title="Manually adjust document crop corners"
+                                    >
+                                      <Crop size={12} /> Adjust Crop
+                                    </button>
+
+                                    <button 
+                                      onClick={() => setLightboxDoc({ 
+                                        jobId: job.id,
+                                        docId: doc.id,
+                                        url: fileUrl, 
+                                        title: doc.docTypeLabel || 'Document Preview',
+                                        side: doc.side,
+                                        extractedCode: doc.extractedCode,
+                                        lowConfidenceCrop: doc.lowConfidenceCrop,
+                                        rawFileUrl: doc.rawFileUrl,
+                                        cropQuad: doc.cropQuad
+                                      })}
+                                      className="w-full flex items-center justify-center gap-1 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 py-1 px-2 rounded-lg transition-colors cursor-pointer border border-slate-700"
+                                    >
+                                      <ZoomIn size={12} /> Inspect
+                                    </button>
+
+                                    <button 
+                                      onClick={() => handleRotateDocument(job.id, doc.id, 90)}
+                                      disabled={actionLoading[`rotate-${doc.id}`]}
+                                      title="Rotate document 90°"
+                                      className="w-full flex items-center justify-center gap-1 text-[11px] font-bold bg-slate-800/90 hover:bg-slate-700 text-cyan-300 py-1 px-2 rounded-lg transition-colors cursor-pointer border border-cyan-500/30 disabled:opacity-50"
+                                    >
+                                      <RotateCw size={12} className={actionLoading[`rotate-${doc.id}`] ? "animate-spin" : ""} /> Rotate 90°
+                                    </button>
+                                  </>
                                 )}
 
                                 {doc.isDarkPage && (
@@ -874,11 +1172,11 @@ const PrintStudioWorkspace = ({
       {/* PRINT PREVIEW & LAYOUT REVIEW MODAL (Interactive A4 Sheet Inspection) */}
       {/* ========================================================================= */}
       {previewModal && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-5xl h-[90vh] max-h-[850px] overflow-hidden flex flex-col shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-5 overflow-hidden animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-5xl h-[92vh] max-h-[880px] overflow-hidden flex flex-col shadow-2xl">
             
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40 shrink-0">
+            <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-800/40 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30">
                   <Eye size={18} />
@@ -894,7 +1192,8 @@ const PrintStudioWorkspace = ({
               </div>
               <button 
                 onClick={() => setPreviewModal(null)} 
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close (Esc)"
               >
                 <XCircle size={22} />
               </button>
@@ -904,7 +1203,7 @@ const PrintStudioWorkspace = ({
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
               
               {/* Left Column: A4 Paper Preview Canvas */}
-              <div className="flex-1 bg-slate-950 p-6 overflow-y-auto flex flex-col items-center relative custom-scrollbar">
+              <div className="flex-1 bg-slate-950 p-4 sm:p-5 overflow-y-auto flex flex-col items-center relative custom-scrollbar">
                 {previewModal.loading ? (
                   <div className="flex flex-col items-center justify-center my-auto gap-3 text-cyan-400">
                     <RefreshCw className="animate-spin" size={28} />
@@ -916,50 +1215,73 @@ const PrintStudioWorkspace = ({
                     <p className="text-sm font-semibold text-slate-400">No layout preview available for this job.</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-4 w-full max-w-lg my-auto">
+                  <div className="flex flex-col items-center gap-3 w-full max-w-xl my-auto">
                     
-                    {/* Multi-Sheet Selector Tabs (When multiple documents/cards exist in a job) */}
+                    {/* Multi-Sheet Slim Navigation Bar */}
                     {previewModal.previews.length > 1 && (
-                      <div className="flex items-center justify-between w-full bg-slate-900/90 border border-slate-800 p-2 rounded-xl backdrop-blur-sm gap-2">
+                      <div className="flex items-center justify-between w-full bg-slate-900/90 border border-slate-800/90 px-2 py-1.5 rounded-xl backdrop-blur-md gap-2 shrink-0 shadow-sm">
                         <button
+                          type="button"
                           onClick={() => {
                             const cur = previewModal.activeSheetIndex ?? 0;
                             const prev = cur > 0 ? cur - 1 : previewModal.previews.length - 1;
                             setPreviewModal({ ...previewModal, activeSheetIndex: prev });
                           }}
-                          className="px-2.5 py-1 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-700/60 shadow-sm shrink-0 cursor-pointer"
+                          title="Previous Sheet (Left Arrow Key)"
                         >
-                          ◀ Prev Sheet
+                          <ChevronLeft size={14} />
+                          <span>Prev</span>
                         </button>
 
-                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar px-1 py-0.5">
+                        {/* Sheet Number Pills (Clean count without verbose doc titles) */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar px-1 py-0.5 max-w-[calc(100%-140px)]">
                           {previewModal.previews.map((sheet, sIdx) => {
                             const isActive = (previewModal.activeSheetIndex ?? 0) === sIdx;
+                            const isDuplexMode = previewModal.combineMode === 'two-page' || sheet.duplexSide || sheet.type === 'duplex-front' || sheet.type === 'duplex-back';
+                            const duplexSide = sheet.duplexSide || (sheet.side === 'front' ? 'Front' : sheet.side === 'back' ? 'Back' : (isDuplexMode ? (sIdx % 2 === 0 ? 'Front' : 'Back') : null));
+                            
                             return (
                               <button
                                 key={sIdx}
+                                type="button"
                                 onClick={() => setPreviewModal({ ...previewModal, activeSheetIndex: sIdx })}
-                                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 border shrink-0 ${
                                   isActive
-                                    ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
-                                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                                    ? 'bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-950 shadow-md shadow-cyan-500/25 border-cyan-300/60 font-black'
+                                    : 'bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700/90 border-slate-700/60'
                                 }`}
+                                title={`View Sheet ${sIdx + 1}${duplexSide ? ` (${duplexSide})` : ''}`}
                               >
-                                Sheet {sIdx + 1}: {sheet.docTypeLabel || 'Document'}
+                                <span>Sheet {sIdx + 1}</span>
+                                {duplexSide && (
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                    isActive
+                                      ? 'bg-slate-950/20 text-slate-950 font-black'
+                                      : duplexSide === 'Front'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                                  }`}>
+                                    {duplexSide}
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
                         </div>
 
                         <button
+                          type="button"
                           onClick={() => {
                             const cur = previewModal.activeSheetIndex ?? 0;
                             const next = cur < previewModal.previews.length - 1 ? cur + 1 : 0;
                             setPreviewModal({ ...previewModal, activeSheetIndex: next });
                           }}
-                          className="px-2.5 py-1 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-all border border-slate-700/60 shadow-sm shrink-0 cursor-pointer"
+                          title="Next Sheet (Right Arrow Key)"
                         >
-                          Next Sheet ▶
+                          <span>Next</span>
+                          <ChevronRight size={14} />
                         </button>
                       </div>
                     )}
@@ -970,42 +1292,110 @@ const PrintStudioWorkspace = ({
                       const activePreview = previewModal.previews[activeIdx] || previewModal.previews[0];
                       if (!activePreview) return null;
 
-                      const prevUrl = activePreview.previewUrl.startsWith('http')
-                        ? activePreview.previewUrl
-                        : api.defaults.baseURL.replace('/api/v1', '') + activePreview.previewUrl;
+                      const prevUrl = getMediaUrl(activePreview.previewUrl);
+                      const isDuplexMode = previewModal.combineMode === 'two-page' || activePreview.duplexSide || activePreview.type === 'duplex-front' || activePreview.type === 'duplex-back';
+                      const side = activePreview.duplexSide || (activePreview.side === 'front' ? 'Front' : activePreview.side === 'back' ? 'Back' : (isDuplexMode ? (activeIdx % 2 === 0 ? 'Front' : 'Back') : null));
+                      const isFront = side === 'Front' || side === 'front';
 
                       return (
                         <div className="flex flex-col items-center gap-2 w-full">
+                          
+                          {/* Active Sheet Header Info */}
                           <div className="flex items-center justify-between w-full text-xs text-slate-400 px-1">
-                            <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                              <Sparkles size={13} className="text-cyan-400" />
-                              {activePreview.docTypeLabel || 'Document'} 
-                              {activePreview.type === 'composite' && activePreview.groupId ? ` (Group: ${activePreview.groupId})` : ''}
-                            </span>
-                            <span className="font-mono text-[11px] text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/50">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white flex items-center gap-1.5 text-xs">
+                                <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                                {activePreview.docTypeLabel || 'Document'} 
+                                {activePreview.type === 'composite' && activePreview.groupId ? (
+                                  <span className="text-[10px] font-mono font-normal text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/50">Grp: {activePreview.groupId}</span>
+                                ) : null}
+                              </span>
+                              {side && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                                  isFront
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                }`}>
+                                  {isFront ? '📄 Sheet Front' : '🔄 Sheet Back (Duplex)'}
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="font-mono text-[11px] text-cyan-300 bg-cyan-950/60 px-2.5 py-0.5 rounded-lg border border-cyan-800/50 font-semibold shadow-sm shrink-0">
                               Sheet {(activeIdx + 1)} of {previewModal.previews.length} (300 DPI A4)
                             </span>
                           </div>
 
                           {/* Simulated Paper Sheet (White A4 Canvas) */}
-                          <div className="w-full bg-white rounded-lg shadow-2xl p-4 border border-slate-300 relative group overflow-hidden transition-transform duration-200 hover:scale-[1.01]">
+                          <div className="w-full bg-white rounded-lg shadow-2xl p-3 sm:p-4 border border-slate-300 relative group overflow-hidden transition-transform duration-200 hover:scale-[1.005]">
                             <img 
+                              key={prevUrl}
                               src={prevUrl} 
                               alt="A4 print layout" 
-                              className="w-full h-auto object-contain rounded block"
+                              className="w-full h-auto max-h-[56vh] object-contain rounded block mx-auto" 
                             />
 
                             {/* Dimension Overlay Badge */}
-                            <div className="absolute bottom-2 right-2 bg-slate-900/90 backdrop-blur text-white text-[10px] font-mono px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-2 shadow-lg">
+                            <div className="absolute bottom-2 right-2 bg-slate-900/90 backdrop-blur text-white text-[10px] font-mono px-2.5 py-1 rounded-lg border border-slate-700/80 flex items-center gap-2 shadow-lg pointer-events-none">
                               <span className="text-cyan-400 font-semibold">
                                 {activePreview.type === 'full-page' || activePreview.type === 'pdf' || activePreview.type === 'single'
-                                  ? 'Full Page A4: 210 × 297 mm (Horizontal Fit)' 
+                                  ? 'Full Page A4: 210 × 297 mm' 
                                   : 'CR80 Card: 85.6 × 54.0 mm'}
                               </span>
                               <span className="text-slate-500">|</span>
-                              <span className="text-emerald-400">300 DPI Scanner Crisp</span>
+                              <span className="text-emerald-400">300 DPI Crisp</span>
                               <span className="text-slate-500">|</span>
                               <span className="text-amber-300">Natural Colors</span>
+                            </div>
+                          </div>
+
+                          {/* Quick Sheet Actions Toolbar (Rotate & Filter directly from Review Modal) */}
+                          <div className="flex items-center justify-between w-full bg-slate-900/90 border border-slate-800/90 p-1.5 rounded-xl backdrop-blur-sm gap-2 shadow-sm">
+                            <div className="flex items-center gap-1.5">
+                              {(() => {
+                                const targetDocId = activePreview.document?.id || (activePreview.side === 'back' ? activePreview.back?.id : activePreview.front?.id) || previewModal.job.documents[0]?.id;
+                                if (!targetDocId) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRotateDocument(previewModal.job.id, targetDocId, 90)}
+                                    disabled={actionLoading[`rotate-${targetDocId}`]}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
+                                    title="Rotate this document 90 degrees clockwise"
+                                  >
+                                    <RotateCw size={13} className={actionLoading[`rotate-${targetDocId}`] ? "animate-spin" : ""} /> Rotate 90°
+                                  </button>
+                                );
+                              })()}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {(() => {
+                                const targetDocId = activePreview.document?.id || (activePreview.side === 'back' ? activePreview.back?.id : activePreview.front?.id) || previewModal.job.documents[0]?.id;
+                                if (!targetDocId) return null;
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEnhanceDocument(previewModal.job.id, targetDocId, 'magic-color')}
+                                      disabled={actionLoading[`enhance-${targetDocId}`]}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
+                                      title="CamScanner Magic Color: vivid text & clean white background"
+                                    >
+                                      <Sparkles size={12} /> Magic Color
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEnhanceDocument(previewModal.job.id, targetDocId, 'crisp-bw')}
+                                      disabled={actionLoading[`enhance-${targetDocId}`]}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
+                                      title="Monochrome B&W Photocopy"
+                                    >
+                                      Crisp B&W
+                                    </button>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -1019,48 +1409,87 @@ const PrintStudioWorkspace = ({
               <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-5 flex flex-col justify-between overflow-y-auto shrink-0 gap-5">
                 <div className="flex flex-col gap-4">
                   
-                  {/* Combine Mode Switcher */}
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Layers size={14} className="text-cyan-400" /> Combine Layout Mode
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+                  {/* Combine Layout Mode Switcher */}
+                  <div className="flex flex-col gap-2.5 bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers size={14} className="text-cyan-400" /> Combine Layout Mode
+                      </label>
+                      <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                        {previewModal.combineMode === 'two-page' ? 'Duplex' : previewModal.combineMode === 'stacked' ? 'Stacked' : 'Side by Side'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Side by Side Mode */}
                       <button
                         type="button"
                         onClick={() => handleCombineModeToggle('side-by-side')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer text-center ${
+                        className={`p-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center gap-1 text-center border relative overflow-hidden ${
                           (previewModal.combineMode === 'side-by-side' || previewModal.combineMode === 'single-page')
-                            ? 'bg-cyan-600 text-white shadow-md' 
-                            : 'text-slate-400 hover:text-white'
+                            ? 'bg-gradient-to-b from-cyan-500/20 to-teal-500/20 border-cyan-400 text-white shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80'
                         }`}
                         title="Front & Back placed side-by-side horizontally (Standard PVC / Paper Card Size)"
                       >
-                        Side by Side
+                        <div className="flex items-center gap-0.5 text-cyan-400">
+                          <span className="w-3 h-2 rounded-[2px] border border-current bg-current/30"></span>
+                          <span className="w-3 h-2 rounded-[2px] border border-current bg-current/30"></span>
+                        </div>
+                        <span className="text-[11px] font-bold leading-tight">Side by Side</span>
+                        <span className="text-[9px] text-slate-400 leading-none">1 Sheet H</span>
                       </button>
+
+                      {/* Stacked Mode */}
                       <button
                         type="button"
                         onClick={() => handleCombineModeToggle('stacked')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer text-center ${
-                          previewModal.combineMode === 'stacked' 
-                            ? 'bg-cyan-600 text-white shadow-md' 
-                            : 'text-slate-400 hover:text-white'
+                        className={`p-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center gap-1 text-center border relative overflow-hidden ${
+                          previewModal.combineMode === 'stacked'
+                            ? 'bg-gradient-to-b from-cyan-500/20 to-teal-500/20 border-cyan-400 text-white shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80'
                         }`}
                         title="Front on top, Back on bottom in center"
                       >
-                        Stacked
+                        <div className="flex flex-col items-center gap-0.5 text-cyan-400">
+                          <span className="w-4 h-1.5 rounded-[2px] border border-current bg-current/30"></span>
+                          <span className="w-4 h-1.5 rounded-[2px] border border-current bg-current/30"></span>
+                        </div>
+                        <span className="text-[11px] font-bold leading-tight">Stacked</span>
+                        <span className="text-[9px] text-slate-400 leading-none">1 Sheet V</span>
                       </button>
+
+                      {/* Duplex (2-Pg) Mode */}
                       <button
                         type="button"
                         onClick={() => handleCombineModeToggle('two-page')}
-                        className={`py-2 px-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer text-center ${
-                          previewModal.combineMode === 'two-page' 
-                            ? 'bg-cyan-600 text-white shadow-md' 
-                            : 'text-slate-400 hover:text-white'
+                        className={`p-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center gap-1 text-center border relative overflow-hidden ${
+                          previewModal.combineMode === 'two-page'
+                            ? 'bg-gradient-to-b from-cyan-500/20 to-teal-500/20 border-cyan-400 text-white shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80'
                         }`}
-                        title="Page 1 Front, Page 2 Back for Duplex printing"
+                        title="Sheet 1 Front, Sheet 2 Back for Duplex printing"
                       >
-                        Duplex (2-Pg)
+                        <div className="flex items-center gap-1 text-cyan-400">
+                          <FileText size={12} className="opacity-80" />
+                          <RefreshCw size={10} className="text-cyan-300" />
+                          <FileText size={12} className="opacity-80" />
+                        </div>
+                        <span className="text-[11px] font-bold leading-tight">Duplex (2-Pg)</span>
+                        <span className="text-[9px] text-slate-400 leading-none">Front & Back</span>
                       </button>
+                    </div>
+
+                    {/* Active Mode Guide Note */}
+                    <div className="text-[10.5px] text-slate-400 bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800/80 flex items-start gap-1.5">
+                      <Info size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                      <span>
+                        {previewModal.combineMode === 'two-page' 
+                          ? 'Duplex Mode: Sheet 1 = Front, Sheet 2 = Back for 2-sided printing.'
+                          : previewModal.combineMode === 'stacked'
+                          ? 'Stacked Mode: Front on top, Back on bottom on 1 A4 sheet.'
+                          : 'Side by Side: Front & Back placed side-by-side on 1 A4 sheet.'}
+                      </span>
                     </div>
                   </div>
 
@@ -1139,7 +1568,7 @@ const PrintStudioWorkspace = ({
       {/* ========================================================================= */}
       {lightboxDoc && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl max-h-[88vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
               <div className="flex items-center gap-2">
                 <ZoomIn size={16} className="text-cyan-400" />
@@ -1150,13 +1579,71 @@ const PrintStudioWorkspace = ({
                   </span>
                 )}
               </div>
-              <button onClick={() => setLightboxDoc(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setLightboxDoc(null)} className="text-slate-400 hover:text-white cursor-pointer">
                 <XCircle size={20} />
               </button>
             </div>
-            <div className="p-4 bg-slate-950 flex items-center justify-center overflow-auto max-h-[70vh]">
-              <img src={lightboxDoc.url} alt="full document" className="max-h-full max-w-full object-contain rounded" />
+            
+            {/* Image Preview Canvas */}
+            <div className="p-4 bg-slate-950 flex items-center justify-center overflow-auto max-h-[64vh]">
+              <img 
+                key={lightboxDoc.url}
+                src={lightboxDoc.url} 
+                alt="full document" 
+                className="max-h-full max-w-full object-contain rounded" 
+              />
             </div>
+
+            {/* Lightbox Interactive Toolbar */}
+            <div className="px-5 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900/90 gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleRotateDocument(lightboxDoc.jobId, lightboxDoc.docId, 90)}
+                  disabled={actionLoading[`rotate-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition-all cursor-pointer disabled:opacity-50"
+                  title="Rotate document 90 degrees clockwise"
+                >
+                  <RotateCw size={14} className={actionLoading[`rotate-${lightboxDoc.docId}`] ? "animate-spin" : ""} /> Rotate 90°
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Filter:</span>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'magic-color')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  title="Vivid colors & white background"
+                >
+                  <Sparkles size={12} /> Magic Color
+                </button>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'high-contrast')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-bold border border-cyan-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  title="Boost contrast for faint text"
+                >
+                  High Contrast
+                </button>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'crisp-bw')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold border border-slate-600 transition-all cursor-pointer disabled:opacity-50"
+                  title="Clean Black & White Photocopy"
+                >
+                  Crisp B&W
+                </button>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'natural')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-semibold border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                  title="Reset to natural scanned colors"
+                >
+                  Natural
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
@@ -1362,9 +1849,48 @@ const PrintStudioWorkspace = ({
                   </span>
                 )}
               </div>
-              <button onClick={() => setLightboxDoc(null)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer">
-                <XCircle size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                {lightboxDoc.jobId && lightboxDoc.docId && (
+                  <div className="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-700">
+                    <button 
+                      onClick={() => handleRotateDocument(lightboxDoc.jobId, lightboxDoc.docId, 90)}
+                      title="Rotate 90° Clockwise"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <RotateCw size={13} className={actionLoading[`rotate-${lightboxDoc.docId}`] ? "animate-spin" : ""} />
+                      <span>Rotate</span>
+                    </button>
+
+                    <button 
+                      onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'magic-color')}
+                      title="Magic Color enhancement"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold transition-all cursor-pointer border border-emerald-500/30"
+                    >
+                      <Sparkles size={13} />
+                      <span>Magic Color</span>
+                    </button>
+
+                    <button 
+                      onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'high-contrast')}
+                      title="High Contrast filter"
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      High Contrast
+                    </button>
+
+                    <button 
+                      onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'crisp-bw')}
+                      title="Black & White Photocopy filter"
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      B&W
+                    </button>
+                  </div>
+                )}
+                <button onClick={() => setLightboxDoc(null)} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer">
+                  <XCircle size={20} />
+                </button>
+              </div>
             </div>
             <div className="p-6 bg-slate-950 flex items-center justify-center max-h-[70vh] overflow-auto">
               <img src={lightboxDoc.url} alt="Inspect full" className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-xl border border-slate-800" />
@@ -1372,9 +1898,276 @@ const PrintStudioWorkspace = ({
             {lightboxDoc.lowConfidenceCrop && (
               <div className="px-5 py-2.5 bg-amber-500/10 border-t border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
                 <AlertTriangle size={15} className="shrink-0" />
-                <span>Notice: This card used fallback edge trimming. If background borders are visible, use the rotate/crop controls before printing.</span>
+                <span>Notice: Contour detection used edge margin trimming. Use the rotate or filter controls if needed before printing.</span>
               </div>
             )}
+
+            {/* Lightbox Interactive Toolbar */}
+            <div className="px-5 py-3 border-t border-slate-800 flex items-center justify-between bg-slate-900/90 gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const doc = lightboxDoc;
+                    setLightboxDoc(null);
+                    openManualCropModal(doc.jobId, doc);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 text-xs font-bold border border-cyan-500/40 transition-all cursor-pointer"
+                  title="Manually adjust crop boundaries"
+                >
+                  <Crop size={14} /> Adjust Crop
+                </button>
+                <button
+                  onClick={() => handleRotateDocument(lightboxDoc.jobId, lightboxDoc.docId, 90)}
+                  disabled={actionLoading[`rotate-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition-all cursor-pointer disabled:opacity-50"
+                  title="Rotate document 90 degrees clockwise"
+                >
+                  <RotateCw size={14} className={actionLoading[`rotate-${lightboxDoc.docId}`] ? "animate-spin" : ""} /> Rotate 90°
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Filter:</span>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'magic-color')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  title="Vivid colors & white background"
+                >
+                  <Sparkles size={12} /> Magic Color
+                </button>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'high-contrast')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-bold border border-cyan-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  title="Boost contrast for faint text"
+                >
+                  High Contrast
+                </button>
+                <button
+                  onClick={() => handleEnhanceDocument(lightboxDoc.jobId, lightboxDoc.docId, 'crisp-bw')}
+                  disabled={actionLoading[`enhance-${lightboxDoc.docId}`]}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold border border-slate-600 transition-all cursor-pointer disabled:opacity-50"
+                  title="Clean Black & White Photocopy"
+                >
+                  Crisp B&W
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* INTERACTIVE MANUAL CROP MODAL */}
+      {/* ========================================================================= */}
+      {manualCropDoc && (
+        <div 
+          className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-150 select-none"
+          onPointerMove={handleCropPointerMove}
+          onPointerUp={handleCropPointerUp}
+        >
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/60">
+              <div className="flex items-center gap-2">
+                <Crop size={18} className="text-cyan-400" />
+                <div>
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    {manualCropDoc.title} — Manual Crop & Corner Alignment
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Drag the 4 corner handles or edge midpoint handles to select the document region.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setManualCropDoc(null)} 
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            {/* Main Interactive Stage */}
+            <div className="p-4 bg-slate-950 flex-1 flex items-center justify-center overflow-auto min-h-[50vh] max-h-[65vh] relative">
+              <div 
+                ref={cropContainerRef}
+                className="relative inline-block max-w-full max-h-[60vh] border border-slate-800 shadow-2xl rounded overflow-hidden"
+              >
+                {/* Full Uncropped Raw Image */}
+                <img 
+                  src={manualCropDoc.rawUrl} 
+                  alt="raw crop source" 
+                  className="max-h-[60vh] max-w-full block select-none pointer-events-none"
+                  draggable={false}
+                  onError={(e) => {
+                    console.error("Failed to load crop image:", manualCropDoc.rawUrl);
+                    if (!e.target.dataset.triedFallback) {
+                      e.target.dataset.triedFallback = 'true';
+                      const clean = manualCropDoc.rawUrl.replace('/api/v1/uploads', '/uploads');
+                      if (clean !== manualCropDoc.rawUrl) {
+                        e.target.src = clean;
+                      }
+                    }
+                  }}
+                />
+
+                {/* Interactive SVG Overlay */}
+                <svg 
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                >
+                  {/* Outer Semi-transparent Dark Overlay */}
+                  <path 
+                    d={`M 0 0 L 100 0 L 100 100 L 0 100 Z M ${cropPoints[0].x} ${cropPoints[0].y} L ${cropPoints[3].x} ${cropPoints[3].y} L ${cropPoints[2].x} ${cropPoints[2].y} L ${cropPoints[1].x} ${cropPoints[1].y} Z`}
+                    fill="rgba(2, 6, 23, 0.65)"
+                    fillRule="evenodd"
+                  />
+
+                  {/* Polygon Boundary Border */}
+                  <polygon 
+                    points={`${cropPoints[0].x},${cropPoints[0].y} ${cropPoints[1].x},${cropPoints[1].y} ${cropPoints[2].x},${cropPoints[2].y} ${cropPoints[3].x},${cropPoints[3].y}`}
+                    fill="rgba(6, 182, 212, 0.08)"
+                    stroke="#06b6d4"
+                    strokeWidth="0.8"
+                    strokeDasharray="1.5, 1"
+                  />
+
+                  {/* Edge Midpoint Handles */}
+                  {[0, 1, 2, 3].map(edgeIdx => {
+                    const p1 = cropPoints[edgeIdx];
+                    const p2 = cropPoints[(edgeIdx + 1) % 4];
+                    const mx = (p1.x + p2.x) / 2;
+                    const my = (p1.y + p2.y) / 2;
+                    return (
+                      <g key={`edge-${edgeIdx}`} className="pointer-events-auto cursor-move">
+                        <circle 
+                          cx={mx} 
+                          cy={my} 
+                          r="2.2" 
+                          fill="#0284c7" 
+                          stroke="#ffffff" 
+                          strokeWidth="0.6"
+                          onPointerDown={(e) => handleCropPointerDown('edge', edgeIdx, e)}
+                        />
+                      </g>
+                    );
+                  })}
+
+                  {/* 4 Corner Handles */}
+                  {cropPoints.map((pt, idx) => {
+                    const labels = ["TL", "TR", "BR", "BL"];
+                    return (
+                      <g key={`corner-${idx}`} className="pointer-events-auto cursor-pointer">
+                        {/* Glow halo */}
+                        <circle cx={pt.x} cy={pt.y} r="4.5" fill="rgba(6, 182, 212, 0.25)" />
+                        {/* Main Handle */}
+                        <circle 
+                          cx={pt.x} 
+                          cy={pt.y} 
+                          r="2.8" 
+                          fill="#06b6d4" 
+                          stroke="#ffffff" 
+                          strokeWidth="0.8"
+                          onPointerDown={(e) => handleCropPointerDown('corner', idx, e)}
+                        />
+                        {/* Inner Dot */}
+                        <circle cx={pt.x} cy={pt.y} r="0.8" fill="#ffffff" />
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+            </div>
+
+            {/* Bottom Controls Bar */}
+            <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-4 flex-wrap">
+              {/* Quick Actions */}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setCropPoints([
+                    { x: 2, y: 2 },
+                    { x: 98, y: 2 },
+                    { x: 98, y: 98 },
+                    { x: 2, y: 98 }
+                  ])}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
+                >
+                  Full Image
+                </button>
+                <button 
+                  onClick={() => setCropPoints(prev => {
+                    const center = {
+                      x: prev.reduce((s, p) => s + p.x, 0) / 4,
+                      y: prev.reduce((s, p) => s + p.y, 0) / 4
+                    };
+                    return prev.map(p => ({
+                      x: Math.max(0, Math.min(100, p.x + (center.x - p.x) * 0.04)),
+                      y: Math.max(0, Math.min(100, p.y + (center.y - p.y) * 0.04))
+                    }));
+                  })}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
+                >
+                  Inset 4%
+                </button>
+                <button 
+                  onClick={() => handleRotateDocument(manualCropDoc.jobId, manualCropDoc.docId, 90)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition-all cursor-pointer"
+                >
+                  <RotateCw size={13} /> Rotate 90°
+                </button>
+              </div>
+
+              {/* Filter Selection & Apply CTA */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button 
+                    onClick={() => setCropFilterMode('magic-color')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      cropFilterMode === 'magic-color' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Magic Color
+                  </button>
+                  <button 
+                    onClick={() => setCropFilterMode('crisp-bw')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      cropFilterMode === 'crisp-bw' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Crisp B&W
+                  </button>
+                  <button 
+                    onClick={() => setCropFilterMode('high-contrast')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      cropFilterMode === 'high-contrast' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    High Contrast
+                  </button>
+                </div>
+
+                <button 
+                  onClick={handleApplyManualCrop}
+                  disabled={isSavingCrop}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-950/40 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingCrop ? (
+                    <>
+                      <RotateCw size={14} className="animate-spin" />
+                      <span>Applying Crop...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>Apply Crop & Enhance</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

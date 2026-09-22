@@ -118,6 +118,8 @@ register_exception_handlers(app)
 # ========== STATIC FILE MOUNTS ==========
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/processed", StaticFiles(directory=PROCESSED_DIR), name="processed")
+app.mount("/api/v1/uploads", StaticFiles(directory=UPLOAD_DIR), name="api_uploads")
+app.mount("/api/v1/processed", StaticFiles(directory=PROCESSED_DIR), name="api_processed")
 
 # ========== API ROUTERS ==========
 app.include_router(api_v1_router, prefix="/api/v1")

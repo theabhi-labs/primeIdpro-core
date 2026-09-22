@@ -148,7 +148,17 @@ def generate_single_print(image_path: str, output_path: str, is_id_card: bool = 
                         
                         target_w = int(img.width * scale)
                         target_h = int(img.height * scale)
-                        
+
+                        # Fix 3: Reduce noise amplification when upscale ratio is large (e.g. > 1.8x)
+                        if scale > 1.8:
+                            try:
+                                np_img = np.array(img)
+                                # Subtle bilateral filter preserves sharp typography edges while suppressing sensor/compression noise
+                                denoised_np = cv2.bilateralFilter(np_img, d=5, sigmaColor=25, sigmaSpace=25)
+                                img = Image.fromarray(denoised_np)
+                            except Exception as blur_err:
+                                print(f"Subtle denoise skipped: {blur_err}")
+
                         resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                         x = (A4_WIDTH_300DPI - target_w) // 2
                         y = (A4_HEIGHT_300DPI - target_h) // 2

@@ -16,6 +16,8 @@ class PrintDocument(BaseModel):
     isDarkPage: bool = False
     pageCount: int = 1
     lowConfidenceCrop: bool = False
+    rawFileUrl: Optional[str] = None
+    cropQuad: Optional[List[List[float]]] = None
 
 class PrintJob(BaseModel):
     id: str

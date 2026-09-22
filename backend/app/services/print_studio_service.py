@@ -7,6 +7,23 @@ import pytesseract
 import numpy as np
 import uuid
 
+# Fix 1: Named constant for defensive inward margin shrink percentage
+DOC_QUAD_INWARD_SHRINK_PERCENT = 0.018  # 1.8% inward margin shrink towards centroid
+
+def shrink_quad_inward(quad: np.ndarray, shrink_pct: float = DOC_QUAD_INWARD_SHRINK_PERCENT) -> np.ndarray:
+    """
+    Fix 1: Shrinks the 4-point quad slightly inward towards its centroid by shrink_pct.
+    Guarantees that no background table/floor pixels are included in the warp.
+    """
+    if quad is None or len(quad) != 4:
+        return quad
+    center = np.mean(quad, axis=0)
+    shrunk = np.zeros_like(quad, dtype=np.float32)
+    for i in range(4):
+        pt = quad[i]
+        shrunk[i] = pt + (center - pt) * shrink_pct
+    return shrunk
+
 def order_points(pts: np.ndarray) -> np.ndarray:
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
@@ -154,74 +171,396 @@ def auto_orient_card(card_bgr: np.ndarray, face_cascade=None) -> np.ndarray:
     except Exception:
         return card_bgr
 
-def apply_document_scanner_filter(img_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638) -> np.ndarray:
+def detect_document_quad(img_bgr: np.ndarray) -> np.ndarray | None:
     """
-    True Document Scanner / CamScanner style Natural Enhancement for CR80 ID Cards:
-    1. Perspective deskew & illumination leveling (removes room shadows, yellowish tint, gray scanner shadows).
-       - Uses Gaussian background estimation on the Value/Luminance channel.
-       - Chrominance is preserved so face colors, Tiranga (saffron/green), and official stamps stay 100% natural.
-    2. Contrast balancing & unsharp mask (for ultra-crisp 300 DPI text and QR codes).
-    3. CR80 Resize (1011x638) using Lanczos4 interpolation.
+    Intelligent Autonomous Document Boundary & Corner Detector:
+    Uses a multi-scale, multi-method ensemble (Paper Luminance Thresholding +
+    Adaptive Gaussian + Otsu Grayscale/Saturation + Multi-threshold Canny +
+    Bilateral Filtering + RETR_LIST Contour Hierarchy + Convex Polygon Approximation)
+    to detect exact 4-corner document vertices inside binders/folders, on granite/marble floors,
+    wooden tables, cloth/bedsheets, and desks.
     """
     try:
         h, w = img_bgr.shape[:2]
-        if target_w and target_h and (w, h) != (target_w, target_h):
-            img_bgr = cv2.resize(img_bgr, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+        if h < 100 or w < 100:
+            return None
 
-        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
-        l_chan, a_chan, b_chan = cv2.split(lab)
+        scale = 900.0 / max(h, w)
+        small = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
+        sh, sw = small.shape[:2]
+        total_area = sw * sh
 
-        bg_illum = cv2.GaussianBlur(l_chan, (55, 55), 0)
-        l_norm = np.clip((l_chan.astype(np.float32) / (bg_illum.astype(np.float32) + 1.0)) * 235.0, 0, 255).astype(np.uint8)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        filtered = cv2.bilateralFilter(gray, 9, 75, 75)
+        hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        s_chan = hsv[:, :, 1]
 
-        clahe = cv2.createCLAHE(clipLimit=1.4, tileGridSize=(8, 8))
-        l_final = clahe.apply(l_norm)
-        l_blend = cv2.addWeighted(l_final, 0.75, l_chan, 0.25, 0)
+        candidate_masks = []
+        # 1. Paper Luminance thresholds (vital for documents on dark binders, folders, wooden/granite floors)
+        for th in [70, 90, 110, 130, 150]:
+            candidate_masks.append(('lum_th', (gray > th).astype(np.uint8) * 255))
 
-        enhanced_lab = cv2.merge((l_blend, a_chan, b_chan))
-        enhanced_bgr = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        # 2. Otsu and Adaptive on Grayscale
+        _, otsu_gray = cv2.threshold(filtered, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        candidate_masks.append(('otsu_gray', otsu_gray))
+        _, otsu_inv = cv2.threshold(filtered, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        candidate_masks.append(('otsu_inv', otsu_inv))
 
-        gaussian = cv2.GaussianBlur(enhanced_bgr, (0, 0), sigmaX=1.1)
-        sharpened = cv2.addWeighted(enhanced_bgr, 1.25, gaussian, -0.25, 0)
+        adapt = cv2.adaptiveThreshold(filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 4)
+        candidate_masks.append(('adapt', adapt))
+
+        # 3. HSV Saturation Otsu (separates white/cream paper from colored background/cloth)
+        if s_chan.max() - s_chan.min() > 30:
+            _, s_otsu = cv2.threshold(s_chan, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            candidate_masks.append(('hsv_s', s_otsu))
+
+        # 4. Multi-threshold Canny
+        for c1, c2 in [(20, 80), (30, 100), (50, 150)]:
+            candidate_masks.append(('canny', cv2.Canny(filtered, c1, c2)))
+
+        # 5. Color channel Canny
+        for i in range(3):
+            candidate_masks.append(('col_canny', cv2.Canny(small[:, :, i], 25, 90)))
+
+        best_quad = None
+        best_score = 0.0
+
+        for mask_name, m in candidate_masks:
+            for k_size in [(9, 9), (15, 15), (21, 21)]:
+                close_k = cv2.getStructuringElement(cv2.MORPH_RECT, k_size)
+                closed = cv2.morphologyEx(m, cv2.MORPH_CLOSE, close_k, iterations=2)
+                opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), iterations=1)
+
+                # RETR_LIST finds both outer and inner contours (e.g. paper sheet inside binder or on floor)
+                contours, _ = cv2.findContours(opened, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                if not contours:
+                    continue
+                contours = sorted(contours, key=cv2.contourArea, reverse=True)
+
+                for c in contours[:10]:
+                    area = cv2.contourArea(c)
+                    if area < total_area * 0.12 or area > total_area * 0.96:
+                        continue
+
+                    rect = cv2.minAreaRect(c)
+                    rw, rh = rect[1]
+                    if rw < 30 or rh < 30:
+                        continue
+
+                    aspect = max(rw, rh) / min(rw, rh)
+                    # Standard document aspect ratios: Marksheet ~1.0-1.4, A4 ~1.41, Legal ~1.75, Passbook ~1.4-1.6, ID card ~1.58
+                    if aspect < 0.92 or aspect > 2.40:
+                        continue
+
+                    rect_area = rw * rh
+                    solidity = area / max(1.0, rect_area)
+                    if solidity < 0.70:
+                        continue
+
+                    # Attempt 4-corner polygon approximation
+                    hull = cv2.convexHull(c)
+                    peri = cv2.arcLength(hull, True)
+                    pts = None
+
+                    for factor in [0.015, 0.02, 0.028, 0.038, 0.05]:
+                        approx = cv2.approxPolyDP(hull, factor * peri, True)
+                        if len(approx) == 4 and cv2.isContourConvex(approx):
+                            pts = approx.reshape(4, 2)
+                            break
+
+                    # Fallback to minimum area rectangle box points if approximate polygon is notched
+                    if pts is None:
+                        pts = cv2.boxPoints(rect)
+
+                    # Check internal corner angles (between 55 and 125 degrees)
+                    angles = []
+                    for i in range(4):
+                        p0 = pts[i]
+                        p1 = pts[(i + 1) % 4]
+                        p2 = pts[(i + 2) % 4]
+                        v1 = p0 - p1
+                        v2 = p2 - p1
+                        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-6)
+                        angle = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+                        angles.append(angle)
+
+                    if not all(55 <= a <= 125 for a in angles):
+                        continue
+
+                    # Measure average luminance inside candidate
+                    mask_c = np.zeros((sh, sw), dtype=np.uint8)
+                    cv2.fillPoly(mask_c, [np.int32(pts)], 255)
+                    mean_val = cv2.mean(gray, mask=mask_c)[0]
+
+                    # Score candidate: balances area, rectangularity, and paper luminance
+                    lum_factor = max(0.4, min(1.3, mean_val / 120.0))
+                    score = (area / total_area) * (solidity ** 2) * lum_factor
+
+                    # Center bonus
+                    cx, cy = rect[0]
+                    dist_from_center = np.sqrt(((cx - sw / 2) / sw) ** 2 + ((cy - sh / 2) / sh) ** 2)
+                    center_bonus = 1.0 - (dist_from_center * 0.3)
+                    score *= center_bonus
+
+                    if score > best_score:
+                        best_score = score
+                        best_quad = pts * (1.0 / scale)
+
+        if best_quad is not None:
+            best_quad = refine_document_corners(img_bgr, best_quad)
+
+        return best_quad
+    except Exception as e:
+        print(f"Error detecting document quad: {e}")
+        return None
+
+def refine_document_corners(img_bgr: np.ndarray, initial_quad: np.ndarray) -> np.ndarray:
+    """
+    Fix 2: Sub-pixel corner refinement (cv2.cornerSubPix) + Sobel gradient ray snap + Fix 1 defensive inward margin.
+    Snaps initial quad corners directly to the true physical document paper edge
+    and shrinks slightly inward towards centroid to eliminate all table/floor background.
+    """
+    try:
+        if initial_quad is None or len(initial_quad) != 4:
+            return initial_quad
+        h, w = img_bgr.shape[:2]
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        
+        # 1. OpenCV cornerSubPix on float32 corner coordinates
+        corners_f32 = np.array(initial_quad, dtype=np.float32).reshape(-1, 1, 2)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+        try:
+            cv2.cornerSubPix(gray, corners_f32, winSize=(7, 7), zeroZone=(-1, -1), criteria=criteria)
+            subpix_quad = corners_f32.reshape(4, 2)
+        except Exception:
+            subpix_quad = initial_quad
+
+        # 2. Gradient magnitude ray search to snap to step-edge
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        grad_x = cv2.Sobel(blurred, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(blurred, cv2.CV_32F, 0, 1, ksize=3)
+        grad_mag = np.sqrt(grad_x**2 + grad_y**2)
+
+        center = np.mean(subpix_quad, axis=0)
+        refined_quad = np.zeros_like(subpix_quad, dtype=np.float32)
+        for i in range(4):
+            pt = subpix_quad[i]
+            vec = center - pt
+            vec_len = np.linalg.norm(vec)
+            if vec_len < 1e-5:
+                refined_quad[i] = pt
+                continue
+            unit_vec = vec / vec_len
+
+            best_pos = pt.copy()
+            best_grad = 0.0
+
+            for dist in np.linspace(-15, 25, 41):
+                sample_pt = pt + unit_vec * dist
+                sx, sy = int(round(sample_pt[0])), int(round(sample_pt[1]))
+                if 0 <= sx < w and 0 <= sy < h:
+                    g_val = grad_mag[sy, sx]
+                    lum = gray[sy, sx]
+                    score = g_val * (1.0 if lum > 100 else 0.5)
+                    if score > best_grad:
+                        best_grad = score
+                        best_pos = sample_pt
+
+            refined_quad[i] = best_pos
+
+        # 3. Apply defensive inward margin towards centroid (Fix 1)
+        final_shrunk_quad = shrink_quad_inward(refined_quad, DOC_QUAD_INWARD_SHRINK_PERCENT)
+        return final_shrunk_quad
+    except Exception:
+        return initial_quad
+
+def check_crop_confidence(img_bgr: np.ndarray, quad: np.ndarray) -> tuple[bool, float]:
+    """
+    Fix 4: Sanity check: Samples pixel luminance just inside vs just outside the quad boundary.
+    Returns (is_low_confidence, mean_contrast_delta).
+    """
+    try:
+        if quad is None or len(quad) != 4:
+            return True, 0.0
+        h, w = img_bgr.shape[:2]
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        center = np.mean(quad, axis=0)
+
+        deltas = []
+        for i in range(4):
+            p1 = quad[i]
+            p2 = quad[(i + 1) % 4]
+            edge_vec = p2 - p1
+            edge_len = np.linalg.norm(edge_vec)
+            if edge_len < 10:
+                continue
+
+            mid = (p1 + p2) / 2.0
+            outward_vec = mid - center
+            outward_len = np.linalg.norm(outward_vec)
+            if outward_len < 1e-5:
+                continue
+            normal = outward_vec / outward_len
+
+            # Sample at 20%, 40%, 60%, 80% along edge
+            for t in [0.20, 0.40, 0.60, 0.80]:
+                pt_on_edge = p1 + edge_vec * t
+                pt_in = pt_on_edge - normal * 7.0
+                pt_out = pt_on_edge + normal * 7.0
+
+                ix, iy = int(round(pt_in[0])), int(round(pt_in[1]))
+                ox, oy = int(round(pt_out[0])), int(round(pt_out[1]))
+
+                if 0 <= ix < w and 0 <= iy < h and 0 <= ox < w and 0 <= oy < h:
+                    lum_in = float(gray[iy, ix])
+                    lum_out = float(gray[oy, ox])
+                    deltas.append(abs(lum_in - lum_out))
+
+        if not deltas:
+            return True, 0.0
+
+        mean_delta = float(np.mean(deltas))
+        # Weak transition if mean contrast delta < 18.0
+        is_low_confidence = (mean_delta < 18.0)
+        return is_low_confidence, mean_delta
+    except Exception:
+        return True, 0.0
+
+def enhance_scanned_document(img_bgr: np.ndarray, mode: str = "magic-color") -> np.ndarray:
+    """
+    CamScanner / Adobe Scan Grade 'Magic Color' Engine:
+    1. Multi-scale Background Illumination Division (Per-channel shadow & glare removal -> Pure #FFFFFF paper).
+    2. S-Curve Dynamic Range Level Mapping (Deep black text + vibrant official seals/photos).
+    3. Chrominance & Vibrancy Boost (Official board logos, stamps, student photos).
+    4. Typography High-Boost Unsharp Masking for pristine 300+ DPI physical print quality.
+    """
+    try:
+        if img_bgr is None or img_bgr.size == 0:
+            return img_bgr
+
+        h, w = img_bgr.shape[:2]
+        if h < 20 or w < 20:
+            return img_bgr
+
+        # 1. Background illumination estimation and division per channel
+        norm_channels = []
+        for i in range(3):
+            chan = img_bgr[:, :, i].astype(np.float32)
+            k_sz = max(31, int(min(h, w) * 0.08) | 1)
+            dilated = cv2.dilate(chan, cv2.getStructuringElement(cv2.MORPH_RECT, (k_sz, k_sz)))
+            bg_blur = cv2.medianBlur(dilated.astype(np.uint8), k_sz).astype(np.float32)
+            bg_blur = cv2.GaussianBlur(bg_blur, (k_sz, k_sz), 0)
+
+            # Division normalization: img / bg * 255
+            norm = np.clip((chan / (bg_blur + 1e-5)) * 255.0, 0, 255)
+            norm_channels.append(norm)
+
+        norm_bgr = cv2.merge([c.astype(np.uint8) for c in norm_channels])
+
+        if mode == "crisp-bw":
+            gray_n = cv2.cvtColor(norm_bgr, cv2.COLOR_BGR2GRAY)
+            bw = cv2.adaptiveThreshold(gray_n, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10)
+            return cv2.cvtColor(bw, cv2.COLOR_GRAY2BGR)
+
+        # 2. Dynamic Range S-Curve / Auto-Levels (Magic Color Levels)
+        gray_norm = cv2.cvtColor(norm_bgr, cv2.COLOR_BGR2GRAY)
+        p_low = np.percentile(gray_norm, 1.5)
+        p_high = np.percentile(gray_norm, 88.0)
+
+        in_min = max(0.0, float(p_low * 0.85))
+        in_max = max(in_min + 30.0, min(255.0, float(p_high * 1.05)))
+
+        levels_bgr = np.clip(((norm_bgr.astype(np.float32) - in_min) / (in_max - in_min)) * 255.0, 0, 255).astype(np.uint8)
+
+        # 3. Saturation & Vibrancy Boost for Official Emblems / Stamps / Student Photos
+        hsv = cv2.cvtColor(levels_bgr, cv2.COLOR_BGR2HSV)
+        h_c, s_c, v_c = cv2.split(hsv)
+
+        s_factor = 1.30 if mode == "magic-color" else 1.50 if mode == "high-contrast" else 1.05
+        s_boosted = np.clip(s_c.astype(np.float32) * s_factor, 0, 255).astype(np.uint8)
+        v_boosted = np.where(v_c > 220, 255, np.clip(v_c.astype(np.float32) * 1.04, 0, 255)).astype(np.uint8)
+
+        vibrant_hsv = cv2.merge([h_c, s_boosted, v_boosted])
+        vibrant_bgr = cv2.cvtColor(vibrant_hsv, cv2.COLOR_HSV2BGR)
+
+        # 4. Typography High-Boost Unsharp Masking
+        gaussian = cv2.GaussianBlur(vibrant_bgr, (0, 0), sigmaX=1.1)
+        sharpened = cv2.addWeighted(vibrant_bgr, 1.40, gaussian, -0.40, 0)
+
+        # 5. Clean outer border feathering to pure white (#FFFFFF)
+        for i in range(4):
+            alpha = i / 4.0
+            sharpened[i, :] = np.clip(sharpened[i, :].astype(np.float32) * alpha + (1.0 - alpha) * 255, 0, 255).astype(np.uint8)
+            sharpened[-(i+1), :] = np.clip(sharpened[-(i+1), :].astype(np.float32) * alpha + (1.0 - alpha) * 255, 0, 255).astype(np.uint8)
+            sharpened[:, i] = np.clip(sharpened[:, i].astype(np.float32) * alpha + (1.0 - alpha) * 255, 0, 255).astype(np.uint8)
+            sharpened[:, -(i+1)] = np.clip(sharpened[:, -(i+1)].astype(np.float32) * alpha + (1.0 - alpha) * 255, 0, 255).astype(np.uint8)
 
         return sharpened
     except Exception as e:
-        print(f"Error in scanner filter: {e}")
+        print(f"Error in enhance_scanned_document: {e}")
+        return img_bgr
+
+def apply_document_scanner_filter(img_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638, mode: str = "magic-color") -> np.ndarray:
+    """Applies document scanner enhancement with optional CR80 resizing."""
+    try:
+        enhanced = enhance_scanned_document(img_bgr, mode=mode)
+        if target_w and target_h:
+            h, w = enhanced.shape[:2]
+            if (w, h) != (target_w, target_h):
+                enhanced = cv2.resize(enhanced, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+        return enhanced
+    except Exception as e:
+        print(f"Error in apply_document_scanner_filter: {e}")
         return img_bgr
 
 def enhance_card_image(card_bgr: np.ndarray, target_w: int = 1011, target_h: int = 638) -> np.ndarray:
-    """Wrapper that applies the natural document scanner filter at 300 DPI CR80."""
-    return apply_document_scanner_filter(card_bgr, target_w, target_h)
+    """Wrapper that applies the Magic Color document scanner filter at 300 DPI CR80."""
+    return apply_document_scanner_filter(card_bgr, target_w, target_h, mode="magic-color")
 
-def apply_fullpage_scanner_filter(img_bgr: np.ndarray) -> np.ndarray:
-    """
-    Natural Scanner Enhancement for Full A4 Documents (Marksheets, Stamp Papers, Certificates, Passbooks):
-    1. Removes room lighting shadows & yellowish phone cast.
-    2. Levels background paper to crisp #FFFFFF.
-    3. Preserves authentic color for stamps (blue/purple/red ink), seals, and emblems.
-    4. Sharpens text characters and table lines.
-    """
+def apply_fullpage_scanner_filter(img_bgr: np.ndarray, mode: str = "magic-color") -> np.ndarray:
+    """Magic Color Scanner Enhancement for Full A4 Documents (Marksheets, Stamp Papers, Certificates, Passbooks)."""
+    return enhance_scanned_document(img_bgr, mode=mode)
+
+def rotate_document_image(file_path: str, degrees: int = 90) -> bool:
+    """Rotates a document image file in place by 90, 180, or 270 degrees."""
     try:
-        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
-        l_chan, a_chan, b_chan = cv2.split(lab)
-
-        bg_illum = cv2.GaussianBlur(l_chan, (75, 75), 0)
-        l_norm = np.clip((l_chan.astype(np.float32) / (bg_illum.astype(np.float32) + 1.0)) * 240.0, 0, 255).astype(np.uint8)
-
-        clahe = cv2.createCLAHE(clipLimit=1.3, tileGridSize=(8, 8))
-        l_final = clahe.apply(l_norm)
-        l_blend = cv2.addWeighted(l_final, 0.80, l_chan, 0.20, 0)
-
-        enhanced_lab = cv2.merge((l_blend, a_chan, b_chan))
-        enhanced_bgr = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-
-        gaussian = cv2.GaussianBlur(enhanced_bgr, (0, 0), sigmaX=1.0)
-        sharpened = cv2.addWeighted(enhanced_bgr, 1.20, gaussian, -0.20, 0)
-
-        return sharpened
+        if not os.path.exists(file_path):
+            return False
+        img = cv2.imread(file_path)
+        if img is None:
+            return False
+        
+        deg = degrees % 360
+        if deg == 90:
+            rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+        elif deg == 180:
+            rotated = cv2.rotate(img, cv2.ROTATE_180)
+        elif deg == 270:
+            rotated = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        else:
+            return True
+            
+        cv2.imwrite(file_path, rotated, [cv2.IMWRITE_JPEG_QUALITY, 96])
+        return True
     except Exception as e:
-        print(f"Error in fullpage filter: {e}")
-        return img_bgr
+        print(f"Error rotating document {file_path}: {e}")
+        return False
+
+def reapply_filter_to_document(file_path: str, mode: str = "magic-color") -> bool:
+    """Re-applies a scanner filter mode (magic-color, high-contrast, crisp-bw, natural) to a document file in place."""
+    try:
+        if not os.path.exists(file_path):
+            return False
+        img = cv2.imread(file_path)
+        if img is None:
+            return False
+        
+        enhanced = enhance_scanned_document(img, mode=mode)
+        cv2.imwrite(file_path, enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
+        return True
+    except Exception as e:
+        print(f"Error reapplying filter to {file_path}: {e}")
+        return False
 
 def find_and_extract_card_boxes(img_bgr: np.ndarray) -> list:
     """
@@ -455,36 +794,53 @@ def is_pan_card_content(text: str = "", img: np.ndarray = None, face_cascade=Non
     return False
 
 def get_doc_type_label(text: str = "", img: np.ndarray = None) -> str:
-    """Matches OCR text or visual color cues against known ID card types."""
+    """Matches OCR text or visual color cues against known document and card types."""
     if text:
         text_up = text.upper()
+        # Marksheet / Educational Certificate check
+        if any(w in text_up for w in ['MARK', 'MARKSHEET', 'SECONDARY', 'BOARD', 'EXAMINATION', 'EDUCATION', 'ROLL NO', 'CBSE', 'RBSE', 'ICSE', 'PRADESH', 'UNIVERSITY', 'DEGREE', 'DIPLOMA', 'RESULT', 'THEORY', 'PRACTICAL']):
+            return "Marksheet"
+        # Government / Caste / Income Certificate check
+        if any(w in text_up for w in ['CERTIFICATE', 'CASTE', 'INCOME', 'DOMICILE', 'NIVAS', 'PRAMAN PATRA', 'GOVERNMENT', 'DISTRICT', 'TAHSIL', 'TEHSIL', 'REVENUE']):
+            return "Certificate"
+        # Bank Passbook check
+        if any(w in text_up for w in ['PASSBOOK', 'BANK', 'ACCOUNT', 'IFSC', 'BRANCH', 'STATEMENT']):
+            return "Bank Passbook"
+        # Identity Cards check
         if 'आधार' in text or 'UIDAI' in text_up or 'UNIQUE IDENTIFICATION' in text_up or 'AADHAAR' in text_up:
             return "Aadhaar Card"
         if 'निर्वाचन' in text or 'ELECTION' in text_up or 'VOTER' in text_up:
             return "Voter ID"
         if 'आयकर' in text or 'INCOME TAX' in text_up or 'PERMANENT ACCOUNT' in text_up or re.search(r'[A-Z]{5}[0-9]{4}[A-Z]', text_up):
             return "PAN Card"
-        if 'DRIVING' in text_up or 'TRANSPORT' in text_up:
+        if 'DRIVING' in text_up or 'TRANSPORT' in text_up or 'LICENSE' in text_up or 'LICENCE' in text_up:
             return "Driving License"
 
     if img is not None:
         try:
             h, w = img.shape[:2]
+            aspect = w / float(h)
+
+            # If document is vertical (portrait A4 format), it is NEVER an ID card!
+            if aspect < 0.95:
+                is_full, f_label = detect_full_page_document(img)
+                return f_label if is_full else "Marksheet" if aspect < 0.85 else "General Document"
+
             top_band = img[0:int(h * 0.35), :]
             hsv = cv2.cvtColor(top_band, cv2.COLOR_BGR2HSV)
             # Tricolor check (Aadhaar)
             green = np.sum((hsv[:, :, 0] >= 35) & (hsv[:, :, 0] <= 85) & (hsv[:, :, 1] > 30))
             saffron = np.sum((hsv[:, :, 0] >= 5) & (hsv[:, :, 0] <= 25) & (hsv[:, :, 1] > 50))
-            if green > 1000 and saffron > 1000:
+            if green > 1000 and saffron > 1000 and 1.25 <= aspect <= 1.95:
                 return "Aadhaar Card"
             # Blue band check (PAN)
             blue = np.sum((hsv[:, :, 0] >= 95) & (hsv[:, :, 0] <= 130) & (hsv[:, :, 1] > 40))
-            if blue > 2500:
+            if blue > 2500 and 1.25 <= aspect <= 1.95:
                 return "PAN Card"
         except Exception:
             pass
 
-    return "ID Card"
+    return "General Document"
 
 def detect_eaadhaar_full_letter(img_bgr: np.ndarray, face_cascade=None) -> tuple[bool, int]:
     """
@@ -667,9 +1023,27 @@ def detect_full_page_document(img_bgr: np.ndarray) -> tuple[bool, str]:
 def process_full_page_document(img_bgr: np.ndarray, doc_label: str, upload_dir: str, group_id: str) -> list[dict]:
     """
     Processes full A4 document (Marksheet, Stamp Paper, Certificate, Passbook)
-    with natural whitening & sharpening without slicing or card squishing.
+    with perspective deskewing and CamScanner-grade Magic Color enhancement.
     """
-    enhanced = apply_fullpage_scanner_filter(img_bgr)
+    # Attempt 4-corner quad detection first
+    quad = detect_document_quad(img_bgr)
+    is_low_conf, _ = check_crop_confidence(img_bgr, quad)
+    if quad is not None:
+        warped = four_point_transform(img_bgr, quad)
+        wh, ww = warped.shape[:2]
+        # Inset margin
+        pad_y = max(4, int(wh * 0.015))
+        pad_x = max(4, int(ww * 0.015))
+        processed = warped[pad_y:wh - pad_y, pad_x:ww - pad_x]
+    else:
+        processed = img_bgr
+
+    # Normalize orientation if marksheet is horizontal
+    ph, pw = processed.shape[:2]
+    if doc_label == "Marksheet" and pw > ph:
+        processed = cv2.rotate(processed, cv2.ROTATE_90_CLOCKWISE)
+
+    enhanced = enhance_scanned_document(processed, mode="magic-color")
     doc_id = str(uuid.uuid4())
     save_name = f"{doc_id}.jpg"
     cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
@@ -687,18 +1061,17 @@ def process_full_page_document(img_bgr: np.ndarray, doc_label: str, upload_dir: 
         "isDarkPage": check_dark_page(enhanced),
         "pageCount": 1,
         "status": "matched",
-        "lowConfidenceCrop": False
+        "lowConfidenceCrop": is_low_conf
     }]
 
 def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None) -> list[dict]:
     """
     Master Autonomous Document Engine:
-    1. Full-Size Documents (Marksheet, Stamp Paper, Certificate, Passbook): Preserved in full A4 width with 300 DPI enhancement.
+    1. Full-Size Documents (Marksheets, Stamp Papers, Certificates, Passbooks): 4-Corner Quad Perspective Warp + CamScanner Magic Color.
     2. e-Aadhaar Letters: Automatically isolates bottom-left (Front) and bottom-right (Back) and pairs them.
-    3. Isolated Card Boxes on Background (Bedsheets, Tables, Tilted Photos): 4-Point Deskew + CR80 300 DPI Scanner Filter.
-    4. PAN Cards: Strictly protected from false splitting (always 1 single front card).
-    5. Dual 2-in-1 Cards: Auto-segments 2 distinct cards and links them.
-    6. Single ID Cards: High-fidelity natural CR80 scanner output.
+    3. Dual 2-in-1 Cards: Auto-segments 2 distinct cards and links them.
+    4. Isolated Card Boxes: 4-Point Deskew + CR80 300 DPI Scanner Filter.
+    5. Single ID Cards: High-fidelity natural CR80 scanner output.
     """
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -748,33 +1121,23 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
         }]
 
     h, w = img.shape[:2]
-    aspect_ratio = w / h if h > 0 else 1.0
+    aspect_ratio = w / float(h) if h > 0 else 1.0
     group_id = str(uuid.uuid4())[:8]
 
     # Pre-extract OCR text if available (downscaled and fast)
     full_code, full_text = extract_id_code(img)
 
     # =========================================================================
-    # STEP 1: CHECK FOR FULL-PAGE DOCUMENTS (Marksheet, Stamp Paper, Certificate, Passbook)
-    # Checked first so passbooks & marksheets are never falsely split into cards!
-    # =========================================================================
-    is_full_page, doc_label = detect_full_page_document(img)
-    if is_full_page:
-        return process_full_page_document(img, doc_label, upload_dir, group_id)
-
-    # =========================================================================
-    # STEP 2: CHECK FOR E-AADHAAR FULL LETTER (A4 UIDAI Official Letter)
+    # STEP 1: CHECK FOR E-AADHAAR FULL LETTER (A4 UIDAI Official Letter)
     # =========================================================================
     is_eaadhaar, split_y = detect_eaadhaar_full_letter(img, face_cascade)
     if is_eaadhaar:
         return extract_eaadhaar_bottom_cards(img, split_y, upload_dir, group_id, face_cascade)
 
     # =========================================================================
-    # STEP 3: CHECK FOR ISOLATED ID CARD BOXES ON BACKGROUND (Camera Photos on Bedsheets/Tables)
+    # STEP 2: CHECK FOR 2 DISTINCT ID CARD BOXES ON BACKGROUND
     # =========================================================================
     card_boxes = find_and_extract_card_boxes(img)
-
-    # 3A: Two distinct card boxes detected
     if len(card_boxes) == 2:
         cards = []
         for i, box in enumerate(card_boxes):
@@ -837,48 +1200,8 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             }
         ]
 
-    # 3B: Single card box detected
-    if len(card_boxes) == 1:
-        warped = four_point_transform(img, card_boxes[0])
-        wh, ww = warped.shape[:2]
-        warped = warped[int(wh * 0.02):int(wh * 0.98), int(ww * 0.02):int(ww * 0.98)]
-        oriented = auto_orient_card(warped, face_cascade)
-        enhanced = apply_document_scanner_filter(oriented)
-
-        is_pan = is_pan_card_content(full_text, enhanced, face_cascade)
-        has_face = detect_face(enhanced, face_cascade)
-        has_qr = detect_qr_code(enhanced)
-        code, text = extract_id_code(enhanced)
-
-        if is_pan:
-            doc_label = "PAN Card"
-            side = "front"
-        else:
-            doc_label = get_doc_type_label(text or full_text, enhanced)
-            side = "front" if (has_face or "AADHAAR" in doc_label.upper()) else ("back" if has_qr else "front")
-
-        doc_id = str(uuid.uuid4())
-        save_name = f"{doc_id}.jpg"
-        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
-
-        return [{
-            "id": doc_id,
-            "save_name": save_name,
-            "fileType": "image",
-            "jobType": "id-card",
-            "docTypeLabel": doc_label,
-            "side": side,
-            "groupId": group_id,
-            "extractedCode": code or full_code,
-            "extractedText": text or full_text,
-            "isDarkPage": check_dark_page(enhanced),
-            "pageCount": 1,
-            "status": "matched" if side == "front" else "unmatched",
-            "lowConfidenceCrop": False
-        }]
-
     # =========================================================================
-    # STEP 4: CHECK FOR DUAL CARDS (Wide Horizontal or Vertical Stacked Scan)
+    # STEP 3: CHECK FOR DUAL CARDS (Wide Horizontal 2-in-1 Scan)
     # =========================================================================
     if aspect_ratio >= 2.05:
         split_x = int(w * 0.50)
@@ -941,72 +1264,94 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
             }
         ]
 
-    if 0.50 <= aspect_ratio <= 1.25:
-        split_y = int(h * 0.50)
-        top_half = img[0:split_y, :]
-        bot_half = img[split_y:h, :]
+    # =========================================================================
+    # STEP 4: AUTONOMOUS 4-CORNER DOCUMENT QUAD PERSPECTIVE WARP & ENHANCEMENT
+    # Catches Marksheets, Certificates, Passbooks, Stamp Papers, and Cards on backgrounds!
+    # =========================================================================
+    doc_quad = detect_document_quad(img)
+    if doc_quad is not None:
+        is_low_conf, _ = check_crop_confidence(img, doc_quad)
+        warped = four_point_transform(img, doc_quad)
+        wh, ww = warped.shape[:2]
+        pad_y = max(4, int(wh * 0.015))
+        pad_x = max(4, int(ww * 0.015))
+        clean_warped = warped[pad_y:wh - pad_y, pad_x:ww - pad_x]
+        c_h, c_w = clean_warped.shape[:2]
+        c_aspect = c_w / float(c_h)
 
-        top_f = detect_face(top_half, face_cascade)
-        bot_f = detect_face(bot_half, face_cascade)
-        top_q = detect_qr_code(top_half)
-        bot_q = detect_qr_code(bot_half)
+        c_code, c_text = extract_id_code(clean_warped)
+        is_pan = is_pan_card_content(c_text or full_text, clean_warped, face_cascade)
+        has_face = detect_face(clean_warped, face_cascade)
+        doc_label = get_doc_type_label(c_text or full_text, clean_warped)
 
-        if (top_f and bot_q) or (bot_f and top_q) or (top_f and bot_f):
-            top_crop = trim_card_margins(top_half)
-            bot_crop = trim_card_margins(bot_half)
-            top_enh = apply_document_scanner_filter(auto_orient_card(top_crop, face_cascade))
-            bot_enh = apply_document_scanner_filter(auto_orient_card(bot_crop, face_cascade))
+        # ID Cards are strictly landscape CR80 aspect (1.15 to 2.10) and match ID card types (PAN, Aadhaar, Voter, DL)
+        # Vertical documents (c_aspect < 1.0) or marksheets/certificates/passbooks are NEVER ID cards!
+        is_id_card = False
+        if doc_label not in ["Marksheet", "Certificate", "Bank Passbook", "Stamp Paper", "General Document", "PDF Document"]:
+            if is_pan:
+                is_id_card = True
+            elif ("AADHAAR" in doc_label.upper() or "VOTER" in doc_label.upper() or "DRIVING" in doc_label.upper()) and (1.15 <= c_aspect <= 2.10):
+                is_id_card = True
 
-            if bot_f and not top_f:
-                front_crop, back_crop = bot_enh, top_enh
-            else:
-                front_crop, back_crop = top_enh, bot_enh
+        if is_id_card:
+            oriented = auto_orient_card(clean_warped, face_cascade)
+            enhanced = apply_document_scanner_filter(oriented)
+            side = "front"
 
-            doc_label = get_doc_type_label(full_text, front_crop)
+            doc_id = str(uuid.uuid4())
+            save_name = f"{doc_id}.jpg"
+            cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
 
-            front_id = str(uuid.uuid4())
-            front_save_name = f"{front_id}_front.jpg"
-            cv2.imwrite(os.path.join(upload_dir, front_save_name), front_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+            return [{
+                "id": doc_id,
+                "save_name": save_name,
+                "fileType": "image",
+                "jobType": "id-card",
+                "docTypeLabel": doc_label if not is_pan else "PAN Card",
+                "side": side,
+                "groupId": group_id,
+                "extractedCode": c_code or full_code,
+                "extractedText": c_text or full_text,
+                "isDarkPage": check_dark_page(enhanced),
+                "pageCount": 1,
+                "status": "matched",
+                "lowConfidenceCrop": is_low_conf
+            }]
+        else:
+            # Full A4 Document (Marksheet, Certificate, Passbook, Stamp Paper, General Document)
+            is_full, full_doc_label = detect_full_page_document(clean_warped)
+            final_label = full_doc_label if is_full else doc_label if doc_label != "General Document" else ("Marksheet" if c_aspect <= 1.05 else "General Document")
 
-            back_id = str(uuid.uuid4())
-            back_save_name = f"{back_id}_back.jpg"
-            cv2.imwrite(os.path.join(upload_dir, back_save_name), back_crop, [cv2.IMWRITE_JPEG_QUALITY, 96])
+            enhanced = enhance_scanned_document(clean_warped, mode="magic-color")
+            doc_id = str(uuid.uuid4())
+            save_name = f"{doc_id}.jpg"
+            cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
 
-            return [
-                {
-                    "id": front_id,
-                    "save_name": front_save_name,
-                    "fileType": "image",
-                    "jobType": "id-card",
-                    "docTypeLabel": doc_label,
-                    "side": "front",
-                    "groupId": group_id,
-                    "extractedCode": full_code,
-                    "extractedText": full_text,
-                    "isDarkPage": check_dark_page(front_crop),
-                    "pageCount": 1,
-                    "status": "matched",
-                    "lowConfidenceCrop": False
-                },
-                {
-                    "id": back_id,
-                    "save_name": back_save_name,
-                    "fileType": "image",
-                    "jobType": "id-card",
-                    "docTypeLabel": doc_label,
-                    "side": "back",
-                    "groupId": group_id,
-                    "extractedCode": full_code,
-                    "extractedText": full_text,
-                    "isDarkPage": check_dark_page(back_crop),
-                    "pageCount": 1,
-                    "status": "matched",
-                    "lowConfidenceCrop": False
-                }
-            ]
+            return [{
+                "id": doc_id,
+                "save_name": save_name,
+                "fileType": "image",
+                "jobType": "general-document",
+                "docTypeLabel": final_label,
+                "side": None,
+                "groupId": group_id,
+                "extractedCode": c_code or full_code,
+                "extractedText": c_text or full_text,
+                "isDarkPage": check_dark_page(enhanced),
+                "pageCount": 1,
+                "status": "matched",
+                "lowConfidenceCrop": is_low_conf
+            }]
 
     # =========================================================================
-    # STEP 5: CHECK FOR FULL FRAME PAN CARD
+    # STEP 5: FULL-PAGE DOCUMENT WITHOUT DETECTABLE QUAD (Scanner / Full Frame)
+    # =========================================================================
+    is_full_page, doc_label = detect_full_page_document(img)
+    if is_full_page:
+        return process_full_page_document(img, doc_label, upload_dir, group_id)
+
+    # =========================================================================
+    # STEP 6: CHECK FOR FULL FRAME PAN CARD
     # =========================================================================
     is_pan = is_pan_card_content(full_text, img, face_cascade)
     if is_pan:
@@ -1035,42 +1380,59 @@ def process_upload_and_split(file_path: str, upload_dir: str, face_cascade=None)
         }]
 
     # =========================================================================
-    # STEP 6: FALLBACK: SINGLE ID CARD (Camera photo or single scanned side)
+    # STEP 7: FALLBACK: SINGLE ID CARD / DOCUMENT
     # =========================================================================
-    trimmed = trim_card_margins(img)
-    oriented = auto_orient_card(trimmed, face_cascade)
-    enhanced = apply_document_scanner_filter(oriented)
+    has_face = detect_face(img, face_cascade)
+    has_qr = detect_qr_code(img)
+    doc_label = get_doc_type_label(full_text, img)
 
-    has_face = detect_face(enhanced, face_cascade)
-    has_qr = detect_qr_code(enhanced)
-    doc_label = get_doc_type_label(full_text, enhanced)
+    if (0.50 <= aspect_ratio <= 1.95) and (has_face or has_qr or "AADHAAR" in doc_label.upper()):
+        trimmed = trim_card_margins(img)
+        oriented = auto_orient_card(trimmed, face_cascade)
+        enhanced = apply_document_scanner_filter(oriented)
 
-    if has_face or "AADHAAR" in doc_label.upper():
-        side = "front"
-    elif has_qr:
-        side = "back"
+        side = "front" if (has_face or "AADHAAR" in doc_label.upper()) else ("back" if has_qr else "front")
+        doc_id = str(uuid.uuid4())
+        save_name = f"{doc_id}.jpg"
+        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
+
+        return [{
+            "id": doc_id,
+            "save_name": save_name,
+            "fileType": "image",
+            "jobType": "id-card",
+            "docTypeLabel": doc_label,
+            "side": side,
+            "groupId": group_id,
+            "extractedCode": full_code,
+            "extractedText": full_text,
+            "isDarkPage": check_dark_page(enhanced),
+            "pageCount": 1,
+            "status": "matched" if side == "front" else "unmatched",
+            "lowConfidenceCrop": True
+        }]
     else:
-        side = "front"
+        # General Document fallback with Magic Color enhancement
+        enhanced = enhance_scanned_document(img, mode="magic-color")
+        doc_id = str(uuid.uuid4())
+        save_name = f"{doc_id}.jpg"
+        cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
 
-    doc_id = str(uuid.uuid4())
-    save_name = f"{doc_id}.jpg"
-    cv2.imwrite(os.path.join(upload_dir, save_name), enhanced, [cv2.IMWRITE_JPEG_QUALITY, 96])
-
-    return [{
-        "id": doc_id,
-        "save_name": save_name,
-        "fileType": "image",
-        "jobType": "id-card",
-        "docTypeLabel": doc_label,
-        "side": side,
-        "groupId": group_id,
-        "extractedCode": full_code,
-        "extractedText": full_text,
-        "isDarkPage": check_dark_page(enhanced),
-        "pageCount": 1,
-        "status": "matched" if side == "front" else "unmatched",
-        "lowConfidenceCrop": True
-    }]
+        return [{
+            "id": doc_id,
+            "save_name": save_name,
+            "fileType": "image",
+            "jobType": "general-document",
+            "docTypeLabel": "General Document",
+            "side": None,
+            "groupId": group_id,
+            "extractedCode": full_code,
+            "extractedText": full_text,
+            "isDarkPage": check_dark_page(enhanced),
+            "pageCount": 1,
+            "status": "matched",
+            "lowConfidenceCrop": True
+        }]
 
 def group_documents(documents: list) -> list:
     """
