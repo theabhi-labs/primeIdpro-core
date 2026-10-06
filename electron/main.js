@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, dialog, globalShortcut } = require("electron");
+const { app, BrowserWindow, dialog, globalShortcut, clipboard } = require("electron");
 const path = require("path");
 const config = require("./src/config");
 const logger = require("./src/logging/logger");
@@ -37,9 +37,13 @@ async function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false, // Isolated preload bridge
-            devTools: true // DevTools strictly enabled for debugging
+            devTools: false // DevTools strictly disabled
         }
     });
+
+    // Apply Content Protection immediately to block screenshots / screen recordings (OS level)
+    mainWindow.setContentProtection(true);
+    logger.info("SCREENSHOT_PROTECTION_ENABLED");
 
     // Navigation & popup security guards
     setupNavigationGuards(mainWindow);
@@ -58,10 +62,7 @@ async function createWindow() {
     setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.setAlwaysOnTop(false);
-            // Apply Content Protection after the window is fully initialized
-            mainWindow.setContentProtection(false);
-            logger.info("SCREENSHOT_PROTECTION_DISABLED");
-            mainWindow.webContents.openDevTools(); // Force open devtools
+            mainWindow.setContentProtection(true);
         }
     }, 1000);
 
@@ -135,14 +136,23 @@ if (!gotTheLock) {
             // 10. Create Main Application Window IMMEDIATELY for instant UI feedback
             await createWindow();
 
-            // 10.5 Register Screenshot Attempt Listeners
+            // 10.5 Register Screenshot Attempt Listeners & Anti-Capture Guard
             const analyticsManager = require("./src/analytics/analyticsManager");
-            const trackScreenshot = () => {
+            const trackAndBlockScreenshot = () => {
                 logger.warn("SCREENSHOT_ATTEMPT_DETECTED");
+                try {
+                    clipboard.clear();
+                } catch (e) {}
                 analyticsManager.trackEvent("SCREENSHOT_ATTEMPT");
             };
-            globalShortcut.register("PrintScreen", trackScreenshot);
-            globalShortcut.register("CommandOrControl+Shift+S", trackScreenshot);
+            try {
+                globalShortcut.register("PrintScreen", trackAndBlockScreenshot);
+                globalShortcut.register("CommandOrControl+Shift+S", trackAndBlockScreenshot);
+                globalShortcut.register("Alt+PrintScreen", trackAndBlockScreenshot);
+                globalShortcut.register("Control+PrintScreen", trackAndBlockScreenshot);
+            } catch (scErr) {
+                logger.warn("SHORTCUT_REGISTRATION_FAILED", { error: scErr.message });
+            }
 
             // 11. Launch & Health-Check Local Python/FastAPI Backend in parallel
             pythonManager.startBackend().then(() => {
@@ -175,6 +185,12 @@ if (!gotTheLock) {
 // ========================================================================
 // APPLICATION LIFECYCLE HANDLERS
 // ========================================================================
+app.on("will-quit", () => {
+    try {
+        globalShortcut.unregisterAll();
+    } catch (e) {}
+});
+
 app.on("window-all-closed", () => {
     logger.info("WINDOW_ALL_CLOSED");
     jobPoller.stop();

@@ -70,18 +70,20 @@ function setupNavigationGuards(win) {
         return { action: "deny" };
     });
 
-    // Remove window menu (prevents default Electron dev shortcuts like Ctrl+Shift+I / F12 via menu)
-    win.setMenu(null);
+    // Prevent default right-click context menu (blocks "Inspect Element")
+    win.webContents.on("context-menu", (e) => {
+        e.preventDefault();
+    });
 
-    // Block keyboard shortcuts for DevTools (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I, Ctrl+U)
-    // Disabled for debugging
-    /*
+    // Block keyboard shortcuts for DevTools (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I, Ctrl+U) and PrintScreen
     win.webContents.on("before-input-event", (event, input) => {
         const key = input.key ? input.key.toUpperCase() : "";
         const isDevShortcut =
             key === "F12" ||
             ((input.control || input.meta) && input.shift && ["I", "J", "C"].includes(key)) ||
-            ((input.control || input.meta) && key === "U");
+            ((input.control || input.meta) && key === "U") ||
+            key === "PRINTSCREEN" ||
+            key === "SNAPSHOT";
 
         if (isDevShortcut) {
             event.preventDefault();
@@ -92,7 +94,6 @@ function setupNavigationGuards(win) {
     win.webContents.on("devtools-opened", () => {
         win.webContents.closeDevTools();
     });
-    */
 }
 
 module.exports = {

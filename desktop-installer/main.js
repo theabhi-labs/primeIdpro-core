@@ -24,9 +24,12 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            devTools: false
         },
         icon: path.join(__dirname, 'icon.ico'), // optional: add an icon
     });
+
+    mainWindow.setContentProtection(true);
 
     // Load the built React app
     let frontendPath;
