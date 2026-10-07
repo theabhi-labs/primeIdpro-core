@@ -41,9 +41,9 @@ async function createWindow() {
         }
     });
 
-    // Apply Content Protection immediately to block screenshots / screen recordings (OS level)
-    mainWindow.setContentProtection(true);
-    logger.info("SCREENSHOT_PROTECTION_ENABLED");
+    // Content Protection disabled to allow screen recording and screenshots
+    mainWindow.setContentProtection(false);
+    logger.info("SCREENSHOT_AND_RECORDING_ALLOWED");
 
     // Navigation & popup security guards
     setupNavigationGuards(mainWindow);
@@ -62,7 +62,7 @@ async function createWindow() {
     setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.setAlwaysOnTop(false);
-            mainWindow.setContentProtection(true);
+            mainWindow.setContentProtection(false);
         }
     }, 1000);
 
@@ -135,24 +135,6 @@ if (!gotTheLock) {
 
             // 10. Create Main Application Window IMMEDIATELY for instant UI feedback
             await createWindow();
-
-            // 10.5 Register Screenshot Attempt Listeners & Anti-Capture Guard
-            const analyticsManager = require("./src/analytics/analyticsManager");
-            const trackAndBlockScreenshot = () => {
-                logger.warn("SCREENSHOT_ATTEMPT_DETECTED");
-                try {
-                    clipboard.clear();
-                } catch (e) {}
-                analyticsManager.trackEvent("SCREENSHOT_ATTEMPT");
-            };
-            try {
-                globalShortcut.register("PrintScreen", trackAndBlockScreenshot);
-                globalShortcut.register("CommandOrControl+Shift+S", trackAndBlockScreenshot);
-                globalShortcut.register("Alt+PrintScreen", trackAndBlockScreenshot);
-                globalShortcut.register("Control+PrintScreen", trackAndBlockScreenshot);
-            } catch (scErr) {
-                logger.warn("SHORTCUT_REGISTRATION_FAILED", { error: scErr.message });
-            }
 
             // 11. Launch & Health-Check Local Python/FastAPI Backend in parallel
             pythonManager.startBackend().then(() => {

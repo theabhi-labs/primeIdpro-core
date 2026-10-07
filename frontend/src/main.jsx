@@ -5,36 +5,22 @@ import App from './App';
 import './index.css';
 import { CreditProvider } from './context/CreditContext';
 
-// Global security guards: block context menu (Inspect), DevTools shortcuts, and clear clipboard on screenshot attempts
+// Global security guards: block context menu (Inspect) and DevTools shortcuts
 if (typeof window !== 'undefined') {
     // Disable right-click context menu
     window.addEventListener('contextmenu', (e) => {
         e.preventDefault();
     });
 
-    // Disable F12, Ctrl+Shift+I/J/C, Ctrl+U, PrintScreen
+    // Disable DevTools shortcuts (F12, Ctrl+Shift+I/J/C, Ctrl+U)
     window.addEventListener('keydown', (e) => {
         const key = e.key ? e.key.toUpperCase() : '';
         if (
             key === 'F12' ||
             ((e.ctrlKey || e.metaKey) && e.shiftKey && ['I', 'J', 'C'].includes(key)) ||
-            ((e.ctrlKey || e.metaKey) && key === 'U') ||
-            key === 'PRINTSCREEN'
+            ((e.ctrlKey || e.metaKey) && key === 'U')
         ) {
             e.preventDefault();
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText('').catch(() => {});
-            }
-        }
-    });
-
-    // Clear clipboard on screenshot key release
-    window.addEventListener('keyup', (e) => {
-        const key = e.key ? e.key.toUpperCase() : '';
-        if (key === 'PRINTSCREEN' || key === 'SNAPSHOT') {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText('').catch(() => {});
-            }
         }
     });
 }

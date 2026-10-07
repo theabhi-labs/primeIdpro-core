@@ -29,7 +29,7 @@ function createWindow() {
         icon: path.join(__dirname, 'icon.ico'), // optional: add an icon
     });
 
-    mainWindow.setContentProtection(true);
+    mainWindow.setContentProtection(false);
 
     // Load the built React app
     let frontendPath;

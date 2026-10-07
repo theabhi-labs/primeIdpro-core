@@ -75,15 +75,13 @@ function setupNavigationGuards(win) {
         e.preventDefault();
     });
 
-    // Block keyboard shortcuts for DevTools (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I, Ctrl+U) and PrintScreen
+    // Block keyboard shortcuts for DevTools (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I, Ctrl+U)
     win.webContents.on("before-input-event", (event, input) => {
         const key = input.key ? input.key.toUpperCase() : "";
         const isDevShortcut =
             key === "F12" ||
             ((input.control || input.meta) && input.shift && ["I", "J", "C"].includes(key)) ||
-            ((input.control || input.meta) && key === "U") ||
-            key === "PRINTSCREEN" ||
-            key === "SNAPSHOT";
+            ((input.control || input.meta) && key === "U");
 
         if (isDevShortcut) {
             event.preventDefault();
