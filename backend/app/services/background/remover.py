@@ -144,8 +144,8 @@ def remove_background_lightweight(input_path: str, output_path: str, allow_cloud
         new_session_func = getattr(rembg, "new_session", None)
 
         if callable(remove_func) and callable(new_session_func):
-            # Use briarmbg (BriaAI RMBG-1.4) for Replicate-level quality locally, isnet as secondary
-            for model_name in ["briarmbg", "isnet-general-use", "u2net_human_seg"]:
+            # Use u2net_human_seg for studio-grade human portrait segmentation, u2netp as ultra-fast fallback
+            for model_name in ["u2net_human_seg", "u2netp"]:
                 try:
                     pil_input = Image.open(input_path)
                     

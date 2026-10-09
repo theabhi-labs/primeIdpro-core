@@ -15,10 +15,12 @@ class PythonManager {
 
     getBackendExecutablePath() {
         if (config.isDev) {
-            // In dev mode, prefer local Python venv for hot reloading and live code updates
+            // In dev mode, prefer local Python venv (pythonw for zero-console launch)
+            const venvPyw = path.join(__dirname, "..", "..", "..", "backend", ".venv", "Scripts", "pythonw.exe");
             const venvPy = path.join(__dirname, "..", "..", "..", "backend", ".venv", "Scripts", "python.exe");
-            if (fs.existsSync(venvPy)) {
-                return { type: "python", path: venvPy, script: path.join(__dirname, "..", "..", "..", "backend", "server.py") };
+            const pyBinary = fs.existsSync(venvPyw) ? venvPyw : (fs.existsSync(venvPy) ? venvPy : null);
+            if (pyBinary) {
+                return { type: "python", path: pyBinary, script: path.join(__dirname, "..", "..", "..", "backend", "run_server.py") };
             }
             // Check if frozen exe exists in dev as a secondary option
             const devExe = path.join(__dirname, "..", "..", "..", "backend", "dist", "PrimeIdProBackend", "PrimeIdProBackend.exe");
@@ -26,7 +28,7 @@ class PythonManager {
                 return devExe;
             }
             // Fallback to system python
-            return { type: "python", path: "python", script: path.join(__dirname, "..", "..", "..", "backend", "server.py") };
+            return { type: "python", path: "pythonw", script: path.join(__dirname, "..", "..", "..", "backend", "run_server.py") };
         } else {
             return path.join(process.resourcesPath, "backend", "PrimeIdProBackend.exe");
         }

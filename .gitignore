@@ -90,6 +90,8 @@ electron/*.log
 dist_electron/
 release/
 out/
+build_release/
+electron/build_release/
 *.blockmap
 *.exe
 *.AppImage

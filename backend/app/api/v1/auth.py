@@ -230,20 +230,11 @@ async def resend_otp(req: ResendOtpRequest, background_tasks: BackgroundTasks):
 async def login(req: LoginRequest):
     """
     Login to web platform and register device.
-    Enforces verified email check.
     """
     email_clean = req.email.lower().strip()
 
-    # Check email verification status if registered in database
-    user = await User.find_one(User.email == email_clean)
-    if user and not user.email_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email not verified. Please verify your email first.",
-        )
-
     # This authenticates with central platform and registers this physical device
-    wallet_status = connect_online_account(req.email, req.password)
+    wallet_status = connect_online_account(req.email, req.password) or {}
     token = wallet_status.get("deviceToken", "fallback_token")
     
     # Save securely locally to maintain auth state

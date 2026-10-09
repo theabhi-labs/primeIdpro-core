@@ -18,22 +18,64 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      // 1. Login to web API via local backend
-      const res = await api.post('/auth/login', { email, password });
+      console.log("[FirstTimeSetup] Attempting login for:", email);
       
-      if (res.data?.success) {
-        // 2. Automatically sync templates
-        setSyncing(true);
-        try {
-          await api.post('/cards/templates/sync');
-        } catch (syncErr) {
-          console.error("Template sync failed:", syncErr);
-        }
+      let loginSuccess = false;
+      let errorDetail = null;
 
+      // 1. Try Electron Native IPC Credential Binding first if available
+      if (window.primeIdPro?.device?.connectCredentials) {
+        try {
+          const bindRes = await window.primeIdPro.device.connectCredentials({
+            email: email.trim(),
+            password: password.trim(),
+            deviceName: "Front Counter PC"
+          });
+          if (bindRes?.isBound || bindRes?.status === 'ACTIVE') {
+            loginSuccess = true;
+          }
+        } catch (ipcErr) {
+          console.warn("[FirstTimeSetup] Electron IPC connect fallback:", ipcErr);
+          errorDetail = ipcErr.message;
+        }
+      }
+
+      // 2. Authenticate with local Python backend (with retry if backend is still booting)
+      let attempts = 0;
+      while (attempts < 5 && !loginSuccess) {
+        try {
+          const res = await api.post('/auth/login', { email: email.trim(), password: password.trim() });
+          if (res.data?.success) {
+            loginSuccess = true;
+            break;
+          } else {
+            errorDetail = res.data?.message || "Login failed. Please check credentials.";
+            break;
+          }
+        } catch (apiErr) {
+          errorDetail = apiErr.response?.data?.detail || apiErr.response?.data?.message || apiErr.message;
+          // If connection refused (backend booting), wait 1 second and retry
+          if (!apiErr.response && attempts < 4) {
+            attempts++;
+            await new Promise(r => setTimeout(r, 1000));
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (loginSuccess) {
+        // Also ping /auth/login once more in background if needed to ensure auth_store.json exists
+        try {
+          await api.post('/auth/login', { email: email.trim(), password: password.trim() });
+        } catch (_) {}
         onLoginSuccess();
+      } else {
+        setError(errorDetail || "Invalid credentials or central server unreachable.");
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Invalid credentials or network error.");
+      console.error("[FirstTimeSetup] Unexpected login error:", err);
+      setError(err.message || "Invalid credentials or network error.");
     } finally {
       setLoading(false);
       setSyncing(false);
@@ -52,7 +94,7 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
           </div>
           <h1 className="text-2xl font-extrabold text-white mb-2">First Time Setup</h1>
           <p className="text-sm text-slate-400">
-            Connect your local Prime ID Pro app to your Web Account to fetch templates and go completely offline.
+            Connect your local Prime ID Pro app to your Web Account to sync credits and go completely offline.
           </p>
         </div>
 

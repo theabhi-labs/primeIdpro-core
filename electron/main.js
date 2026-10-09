@@ -41,6 +41,8 @@ async function createWindow() {
         }
     });
 
+    mainWindow.removeMenu();
+
     // Content Protection disabled to allow screen recording and screenshots
     mainWindow.setContentProtection(false);
     logger.info("SCREENSHOT_AND_RECORDING_ALLOWED");
@@ -58,13 +60,6 @@ async function createWindow() {
 
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.setAlwaysOnTop(true);
-    setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.setAlwaysOnTop(false);
-            mainWindow.setContentProtection(false);
-        }
-    }, 1000);
 
     mainWindow.on("closed", () => {
         mainWindow = null;

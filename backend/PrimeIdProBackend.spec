@@ -3,7 +3,7 @@ import os
 import sys
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('app', 'app'), ('models', 'models'), ('.env', '.')]
+datas = [('app/templates', 'app/templates'), ('app/metadata.json', 'app'), ('models', 'models'), ('.env', '.')]
 binaries = []
 hiddenimports = [
     'motor.motor_asyncio', 'pymongo', 'beanie',
@@ -34,7 +34,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['matplotlib', 'scipy', 'llvmlite', 'numba', 'sympy', 'fitz', 'pymupdf', 'pytesseract', 'tkinter', 'unittest'],
     noarchive=False,
     optimize=0,
 )
@@ -46,11 +46,12 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='PrimeIdProBackend',
+    icon='icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

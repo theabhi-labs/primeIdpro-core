@@ -215,19 +215,52 @@ async def download_processed(image_id: str):
 
 @router.get("/countries")
 async def get_countries():
-    """List all available passport & visa standard dimension presets."""
+    """List all available passport & visa standard dimension presets for 195+ countries."""
+    seen_names = set()
     countries_list = []
+    
+    # Priority list at the top
+    priority_codes = ["in", "us", "gb", "ca", "au", "ae", "sa", "de", "fr", "jp", "cn"]
+    
+    for p_code in priority_codes:
+        if p_code in COUNTRY_PRESETS:
+            info = COUNTRY_PRESETS[p_code]
+            if info["name"] not in seen_names:
+                seen_names.add(info["name"])
+                size_str = f"{info['width_mm']}x{info['height_mm']} mm"
+                if info.get("width_mm") == 50.8:
+                    size_str = "2x2 inch (51x51 mm)"
+                countries_list.append({
+                    "code": p_code,
+                    "name": info["name"],
+                    "size": size_str,
+                    "standard": size_str,
+                    "bg": info["bg_color"],
+                    "iso": info.get("country_code", p_code.upper())
+                })
+                
+    remaining = []
     for code, info in COUNTRY_PRESETS.items():
-        size_str = f"{info['width_mm']}x{info['height_mm']} mm"
-        countries_list.append({
-            "code": code,
-            "name": info["name"],
-            "size": size_str,
-            "standard": size_str,
-            "bg": info["bg_color"]
-        })
+        if info["name"] not in seen_names:
+            seen_names.add(info["name"])
+            size_str = f"{info['width_mm']}x{info['height_mm']} mm"
+            if info.get("width_mm") == 50.8:
+                size_str = "2x2 inch (51x51 mm)"
+            remaining.append({
+                "code": code,
+                "name": info["name"],
+                "size": size_str,
+                "standard": size_str,
+                "bg": info["bg_color"],
+                "iso": info.get("country_code", code.upper())
+            })
+            
+    remaining.sort(key=lambda x: x["name"])
+    countries_list.extend(remaining)
+    
     return {
         "success": True,
+        "count": len(countries_list),
         "data": countries_list
     }
 

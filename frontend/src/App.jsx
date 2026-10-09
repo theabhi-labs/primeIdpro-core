@@ -4,7 +4,6 @@ import PhotoCopyEditor from './components/Studio/PhotoCopyEditor';
 import PhotoEditor from './components/Studio/PhotoEditor';
 import BulkCopyModal from './components/Studio/BulkCopyModal';
 import PrintSettingsModal from './components/Studio/PrintSettingsModal';
-import PrintStudioWorkspace from './components/PrintStudio/PrintStudioWorkspace';
 import usePhotoProcessing from './hooks/usePhotoProcessing';
 import usePrintSettings from './hooks/usePrintSettings';
 import Toast from './components/Common/Toast';
@@ -15,13 +14,15 @@ import CreditMeterBadge from './components/Credits/CreditMeterBadge';
 import ConnectOnlineModal from './components/Credits/ConnectOnlineModal';
 import LiveKioskGallery from './components/Studio/LiveKioskGallery';
 import CounterQrModal from './components/Studio/CounterQrModal';
+import CountrySearchModal from './components/Studio/CountrySearchModal';
 import { useCredits } from './context/CreditContext';
+import { DEFAULT_COUNTRIES_195 } from './data/countriesData';
 import { getCountries, saveProject, getOrCreateSession, extractErrorMessage, generateSheetPdf, downloadBlob, validateImage } from './services/api';
 import api from './services/api';
 import FirstTimeSetup from './components/Auth/FirstTimeSetup';
 
-
 import {
+  Search,
   Sparkles,
   Layers,
   CheckCircle2,
@@ -70,7 +71,7 @@ function App() {
 
   const { settings, updateSettings, resetToDefaults } = usePrintSettings();
   const { checkCreditsSufficient, consumeCredits, centerCode, connectedAccount, isConnected, openConnectModal } = useCredits();
-  const [countries, setCountries] = useState([]);
+  const [countries, setCountries] = useState(DEFAULT_COUNTRIES_195);
   const [restoreVintageMode, setRestoreVintageMode] = useState(false);
 
 
@@ -80,6 +81,7 @@ function App() {
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCountryModal, setShowCountryModal] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -87,30 +89,76 @@ function App() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [deviceState, setDeviceState] = useState(null);
   const [showCounterQrModal, setShowCounterQrModal] = useState(false);
-  const [currentWorkspace, setCurrentWorkspace] = useState('passport'); // 'passport' | 'card-studio'
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [offlineReady, setOfflineReady] = useState(true);
   const [downloadProgress, setDownloadProgress] = useState(100);
 
-  // Check auth status on mount
+  // Check auth status on mount with resilient polling
   useEffect(() => {
+    let isMounted = true;
+    let retryTimer = null;
+    let attempts = 0;
+
     const checkAuth = async () => {
+      // 1. Check Electron native device status first
       try {
-        const res = await api.get('/auth/status');
-        if (res.data?.success && res.data?.loggedIn) {
-          setIsAuthenticated(true);
-        } else {
-          setIsAuthenticated(false);
+        if (window.primeIdPro?.device?.getStatus) {
+          const devStatus = await window.primeIdPro.device.getStatus();
+          if (devStatus?.isBound && devStatus?.status === 'ACTIVE') {
+            if (isMounted) {
+              setIsAuthenticated(true);
+              setCheckingAuth(false);
+            }
+          }
         }
       } catch (e) {
-        setIsAuthenticated(false);
-      } finally {
-        setCheckingAuth(false);
+        console.warn('Electron device status check fallback:', e);
+      }
+
+      // 2. Query local Python backend /auth/status
+      try {
+        const res = await api.get('/auth/status');
+        if (isMounted) {
+          if (res.data?.success && res.data?.loggedIn) {
+            setIsAuthenticated(true);
+            setCheckingAuth(false);
+            return;
+          } else if (res.data?.success && !res.data?.loggedIn) {
+            if (window.primeIdPro?.device?.getStatus) {
+              const devStatus = await window.primeIdPro.device.getStatus();
+              if (devStatus?.isBound && devStatus?.status === 'ACTIVE') {
+                setIsAuthenticated(true);
+                setCheckingAuth(false);
+                return;
+              }
+            }
+            setIsAuthenticated(false);
+            setCheckingAuth(false);
+            return;
+          }
+        }
+      } catch (e) {
+        // Backend might still be starting up in frozen exe mode
+        if (isMounted) {
+          if (attempts < 8) {
+            attempts++;
+            retryTimer = setTimeout(checkAuth, 1000);
+            return;
+          } else {
+            setCheckingAuth(false);
+          }
+        }
       }
     };
+
     checkAuth();
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
 
@@ -175,42 +223,7 @@ function App() {
   const [loadingJobId, setLoadingJobId] = useState(null);
   const [isRefreshingQueue, setIsRefreshingQueue] = useState(false);
 
-  // Categorize incoming QR orders by Studio Type
-  const isDocumentPrintJob = (job) => {
-    if (!job) return false;
-    const serviceType = String(
-      job.metadata?.serviceType || 
-      job.metadata?.rawCentralJob?.serviceType || 
-      job.serviceType || 
-      ''
-    ).toUpperCase();
-    const jobType = String(job.type || '').toUpperCase();
-    const centralType = String(job.metadata?.rawCentralJob?.type || '').toUpperCase();
-
-    return (
-      serviceType === 'PRINT_DOCUMENT' ||
-      serviceType === 'ID_CARD' ||
-      serviceType === 'PVC_ID_CARD' ||
-      serviceType === 'PVC_CARD' ||
-      serviceType === 'CERTIFICATE' ||
-      serviceType === 'DOCUMENT_PRINT' ||
-      serviceType === 'PRINT_STUDIO' ||
-      jobType === 'ID_CARD' ||
-      jobType === 'PVC_CARD' ||
-      jobType === 'CERTIFICATE' ||
-      centralType === 'DOCUMENT' ||
-      centralType === 'ID-CARD' ||
-      centralType === 'ID_CARD'
-    );
-  };
-
-  const passportOnlineJobs = useMemo(() => {
-    return onlineJobs.filter(j => !isDocumentPrintJob(j));
-  }, [onlineJobs]);
-
-  const printStudioOnlineJobs = useMemo(() => {
-    return onlineJobs.filter(j => isDocumentPrintJob(j));
-  }, [onlineJobs]);
+  // Cloud URL resolver
 
   const resolveCloudPhotoUrl = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -470,6 +483,10 @@ function App() {
 
   // -------- Fetch Country List --------
   useEffect(() => {
+    let isMounted = true;
+    let retryTimer = null;
+    let attempts = 0;
+
     const fetchCountries = async () => {
       try {
         const response = await getCountries();
@@ -477,20 +494,24 @@ function App() {
         if (Array.isArray(response?.data)) list = response.data;
         else if (Array.isArray(response?.countries)) list = response.countries;
         else if (Array.isArray(response)) list = response;
-        if (list.length > 0) {
+        if (list.length > 0 && isMounted) {
           setCountries(list);
-          setSelectedCountry(list[0]?.code || 'india');
-        } else throw new Error('Empty country list');
+          return;
+        }
       } catch (err) {
-        setCountries([
-          { code: 'india', name: 'India', standard: '35x45 mm' },
-          { code: 'usa', name: 'USA', standard: '2x2 inch' },
-          { code: 'uk', name: 'United Kingdom', standard: '35x45 mm' },
-        ]);
-        setSelectedCountry('india');
+        if (isMounted && attempts < 10) {
+          attempts++;
+          retryTimer = setTimeout(fetchCountries, 2000);
+        }
       }
     };
+
     fetchCountries();
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   // -------- Handlers --------
@@ -931,49 +952,18 @@ function App() {
           {/* Navigation Links */}
           <nav className="mt-4 space-y-1.5">
             {/* Passport Studio link */}
-            <button
-              type="button"
-              onClick={() => setCurrentWorkspace('passport')}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer ${
-                currentWorkspace === 'passport'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
-              }`}
+            <div
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm`}
               title="Passport Studio"
             >
               <Camera className="w-5 h-5 shrink-0" />
               {!isSidebarCollapsed && (
                 <>
                   <span>Passport Studio</span>
-                  {currentWorkspace === 'passport' && (
-                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
-                  )}
+                  <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
                 </>
               )}
-            </button>
-
-            {/* Print Studio link */}
-            <button
-              type="button"
-              onClick={() => setCurrentWorkspace('print-studio')}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3.5 gap-3'} py-2.5 rounded-xl font-semibold text-sm border transition-all cursor-pointer mt-2 ${
-                currentWorkspace === 'print-studio'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border-transparent'
-              }`}
-              title="Print Studio"
-            >
-              <Printer className="w-5 h-5 shrink-0" />
-              {!isSidebarCollapsed && (
-                <>
-                  <span>Print Studio</span>
-                  {currentWorkspace === 'print-studio' && (
-                    <span className="ml-auto w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
-                  )}
-                </>
-              )}
-            </button>
-
+            </div>
           </nav>
 
         </div>
@@ -992,30 +982,29 @@ function App() {
         <div className="absolute bottom-0 left-1/3 w-[400px] h-[250px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" />
 
         {/* --- Top Control & Header Bar --- */}
-        {currentWorkspace !== 'print-studio' && (
         <header className="h-14 px-6 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/60 backdrop-blur-md shrink-0 z-10">
           
-          {/* Left: Passport Country Standard Dropdown & AI Mode */}
+          {/* Left: Passport Country Standard Dropdown (Searchable across 195+ countries) */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
               <Globe size={14} className="text-cyan-400" />
               <span>Country:</span>
             </div>
-            <div className="relative inline-block">
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="bg-slate-950 border border-slate-700/80 hover:border-cyan-500/50 rounded-xl px-3.5 py-1.5 text-white text-xs font-medium focus:ring-2 focus:ring-cyan-500 outline-none cursor-pointer pr-8 transition-all"
-              >
-                {countries.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name} ({c.standard || '35x45 mm'})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-
+            
+            <button
+              onClick={() => setShowCountryModal(true)}
+              className="flex items-center gap-2.5 bg-slate-950 border border-slate-700/80 hover:border-cyan-500/60 hover:bg-slate-900 rounded-xl px-3 py-1.5 text-white text-xs font-medium focus:ring-2 focus:ring-cyan-500 outline-none cursor-pointer transition-all group shadow-sm"
+              title="Search and change passport standard (195+ countries)"
+            >
+              <span className="font-bold text-slate-200 group-hover:text-white">
+                {currentCountryObj.name}
+              </span>
+              <span className="text-[11px] font-mono text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 font-semibold">
+                {currentCountryObj.standard || '35x45 mm'}
+              </span>
+              <Search size={12} className="text-slate-500 group-hover:text-cyan-400" />
+              <ChevronDown size={14} className="text-slate-400 group-hover:text-white transition-colors" />
+            </button>
           </div>
 
 
@@ -1062,27 +1051,7 @@ function App() {
             </button>
           </div>
         </header>
-        )}
 
-        {currentWorkspace === 'print-studio' ? (
-          <PrintStudioWorkspace 
-            isSidebarCollapsed={isSidebarCollapsed}
-            onlineJobs={printStudioOnlineJobs}
-            jobThumbnails={jobThumbnails}
-            deviceState={{
-              ...deviceState,
-              centerCode: centerCode || deviceState?.centerCode || null,
-              centerName: connectedAccount || deviceState?.centerName || 'Counter Desk'
-            }}
-            onRefreshOnlineJobs={handleManualRefreshQueue}
-            onOpenConnectModal={() => openConnectModal('Please connect your PrimeIDPro.online account to activate live Counter QR sync.')}
-            onOpenQrModal={() => setShowCounterQrModal(true)}
-            onDismissOnlineJob={handleDismissOnlineJob}
-            onClearOnlineQueue={handleClearAllOnlineJobs}
-            onJobStatusUpdated={fetchOnlineJobs}
-          />
-        ) : (
-        <>
         <div 
           className="flex-1 overflow-hidden p-6 flex flex-col min-h-0"
           onDragOver={handleDragOver}
@@ -1092,7 +1061,7 @@ function App() {
           
           {/* Always Visible Incoming QR Code Counter Orders Gallery Ribbon */}
           <LiveKioskGallery
-            onlineJobs={passportOnlineJobs}
+            onlineJobs={onlineJobs}
             jobThumbnails={jobThumbnails}
             loadingJobId={loadingJobId}
             isRefreshingQueue={isRefreshingQueue}
@@ -1294,8 +1263,6 @@ function App() {
 
           </div>
         </div>
-        </>
-        )}
 
       </main>
 
@@ -1367,6 +1334,21 @@ function App() {
           ...deviceState,
           centerCode: centerCode || deviceState?.centerCode || null,
           centerName: connectedAccount || deviceState?.centerName || 'Counter Desk'
+        }}
+      />
+
+      {/* Global 195+ Countries Search Modal */}
+      <CountrySearchModal
+        isOpen={showCountryModal}
+        onClose={() => setShowCountryModal(false)}
+        countries={countries}
+        selectedCountry={selectedCountry}
+        onSelectCountry={(code) => {
+          setSelectedCountry(code);
+          const found = countries.find(c => c.code === code);
+          if (found) {
+            setToast({ type: 'success', message: `Selected ${found.name} (${found.standard || '35x45 mm'}) Standard` });
+          }
         }}
       />
     </div>

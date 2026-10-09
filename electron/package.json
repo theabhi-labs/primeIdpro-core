@@ -1,6 +1,6 @@
 {
   "name": "primeidpro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PrimeIdPro Passport Photo Editor & Document Engine",
   "author": "Abhishek Yadav",
   "private": true,
@@ -26,7 +26,7 @@
     "productName": "PrimeIdPro",
     "npmRebuild": false,
     "directories": {
-      "output": "release"
+      "output": "build_release"
     },
     "files": [
       "main.js",
@@ -55,7 +55,8 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -63,6 +64,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "PrimeIdPro",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
     },

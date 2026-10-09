@@ -311,6 +311,7 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
     }
     wallet.setdefault("transactions", []).append(tx)
     _save_wallet(wallet)
+    return wallet
 
 def add_credits(count: int, description: Optional[str] = None) -> Dict[str, Any]:
     """

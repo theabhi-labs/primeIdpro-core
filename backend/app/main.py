@@ -1,4 +1,3 @@
-print("[main.py] 1. importing core modules", flush=True)
 import os
 # --- CPU Optimization for Low-End Laptops ---
 os.environ["OMP_NUM_THREADS"] = "2"        # Limit AI to 2 CPU threads (Prevents 100% CPU lockup)
@@ -8,32 +7,18 @@ os.environ["ORT_TENSORRT_MAX_WORKSPACE_SIZE"] = "1073741824" # 1GB RAM Limit for
 import logging
 from contextlib import asynccontextmanager
 
-print("[main.py] 2. importing fastapi", flush=True)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-print("[main.py] 3. importing app.core.config", flush=True)
 from app.core.config import settings, UPLOAD_DIR, PROCESSED_DIR
-
-print("[main.py] 4. importing app.core.database", flush=True)
 from app.core.database import db
-
-print("[main.py] 5. importing app.core.cascade", flush=True)
 from app.core.cascade import load_cascade_classifiers, get_cv2_data_path
-
-print("[main.py] 6. importing app.core.state", flush=True)
 from app.core.state import uploaded_images, processing_status
-
-print("[main.py] 7. importing middlewares", flush=True)
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.exceptions import register_exception_handlers
-
-print("[main.py] 8. importing api_v1_router", flush=True)
 from app.api.v1 import api_v1_router
-
-print("[main.py] 9. all imports completed!", flush=True)
 
 # ========== IMAGE CODECS (HEIC / AVIF / WEBP SUPPORT) ==========
 try:

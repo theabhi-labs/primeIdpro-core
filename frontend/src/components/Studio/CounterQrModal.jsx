@@ -66,20 +66,20 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
       </head>
       <body>
         <div class="poster">
-          <div class="badge">📷 Passport Photos • 📄 ID Cards & Documents</div>
-          <h1>Scan to Print Photos & Documents</h1>
-          <p class="sub">Scan with your mobile camera to upload Passport Photos, Aadhaar / PAN Cards, or PDF documents for instant 300 DPI prints at this counter!</p>
+          <div class="badge">📷 Passport Photo Studio</div>
+          <h1>Scan to Upload Passport Photo</h1>
+          <p class="sub">Scan with your mobile camera to upload Passport Photos for instant 300 DPI prints at this counter!</p>
           <div class="qr-box">
             <img src="${qrCodeImgUrl}" alt="Counter QR Code" />
           </div>
           <div class="steps">
             <div class="step-item">
               <div class="step-num">Step 1</div>
-              <div class="step-txt">📱 Scan QR with Mobile Camera / Lens</div>
+              <div class="step-txt">📱 Scan QR with Mobile Camera</div>
             </div>
             <div class="step-item">
               <div class="step-num">Step 2</div>
-              <div class="step-txt">📸 Pick Passport Photo OR 📄 Upload ID / PDF</div>
+              <div class="step-txt">📸 Upload or Take Passport Photo</div>
             </div>
             <div class="step-item">
               <div class="step-num">Step 3</div>
@@ -162,9 +162,9 @@ export default function CounterQrModal({ isOpen, onClose, deviceState }) {
               </div>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">2. Select Service</div>
+              <div className="text-[10px] font-extrabold text-cyan-400 uppercase">2. Select Photo</div>
               <div className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
-                Passport Photo or ID / PDF
+                Upload or Take Photo
               </div>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
