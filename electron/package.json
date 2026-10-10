@@ -1,6 +1,6 @@
 {
   "name": "primeidpro",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "PrimeIdPro Passport Photo Editor & Document Engine",
   "author": "Abhishek Yadav",
   "private": true,
@@ -26,7 +26,7 @@
     "productName": "PrimeIdPro",
     "npmRebuild": false,
     "directories": {
-      "output": "build_release"
+      "output": "release"
     },
     "files": [
       "main.js",

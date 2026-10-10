@@ -12,7 +12,45 @@ import {
   AlertTriangle,
   RefreshCw,
   Zap,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Info,
+  UploadCloud,
 } from 'lucide-react';
+
+const ERROR_INFO = {
+  IMAGE_UNREADABLE: {
+    title: 'Photo Format Error',
+    message: 'The photo file could not be read or is corrupted.',
+    tip: 'Try saving the photo as a standard JPG or PNG and upload again.',
+    badge: 'File Error',
+  },
+  NO_PERSON_FOUND: {
+    title: 'No Person Detected',
+    message: 'Could not detect a clear face or person in this photo.',
+    tip: 'Upload a clear front-facing portrait with face and shoulders visible.',
+    badge: 'Face Detection',
+  },
+  MASK_FAILED: {
+    title: 'Background Removal Failed',
+    message: 'AI could not cleanly separate the subject from the background.',
+    tip: 'Use a photo with better contrast, or retry using HD Cloud AI.',
+    badge: 'AI Matting',
+  },
+  TIMEOUT: {
+    title: 'Processing Timed Out',
+    message: 'The background removal took too long to complete.',
+    tip: 'Try uploading a slightly smaller image or retry processing.',
+    badge: 'Timeout',
+  },
+  UNKNOWN: {
+    title: 'Processing Failed',
+    message: 'An unexpected error occurred while processing the photo.',
+    tip: 'Click Retry to try again, or use HD Cloud AI fallback.',
+    badge: 'System Error',
+  },
+};
 
 const ProcessedPhotosGrid = ({
   photos = [],
@@ -22,9 +60,12 @@ const ProcessedPhotosGrid = ({
   onClearAll,
   onSelectForCopy,
   onSelectMultiple,
+  onRetry,
 }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
+  const [expandedDetails, setExpandedDetails] = useState({});
+  const [copiedId, setCopiedId] = useState(null);
 
   // All items to display: combined active uploads + completed photos
   const displayItems = uploads.length > 0 ? uploads : photos;
@@ -46,6 +87,23 @@ const ProcessedPhotosGrid = ({
       const allIds = completedPhotos.map((p) => p.id);
       setSelectedIds(new Set(allIds));
       onSelectMultiple?.(allIds);
+    }
+  };
+
+  const toggleDetails = (id) => {
+    setExpandedDetails((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleCopyDetails = async (photo) => {
+    const code = photo.errorCode || 'UNKNOWN';
+    const detail = photo.rawError || photo.error || 'Unknown error occurred';
+    const textToCopy = `Error Code: ${code}\nDetails: ${detail}\nFilename: ${photo.file?.name || photo.filename || 'photo'}`;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedId(photo.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy error details:', err);
     }
   };
 
@@ -113,6 +171,8 @@ const ProcessedPhotosGrid = ({
           const isSelected = selectedIds.has(photo.id);
           const isProcessing = photo.status === 'processing' || photo.status === 'uploading' || photo.status === 'pending';
           const isFailed = photo.status === 'failed';
+          const errInfo = ERROR_INFO[photo.errorCode] || ERROR_INFO.UNKNOWN;
+          const isExpanded = !!expandedDetails[photo.id];
 
           return (
             <div
@@ -123,7 +183,7 @@ const ProcessedPhotosGrid = ({
                   : isProcessing
                   ? 'border-cyan-500/50 shadow-lg shadow-cyan-950/40'
                   : isFailed
-                  ? 'border-rose-500/50'
+                  ? 'border-rose-500/50 shadow-lg shadow-rose-950/30'
                   : 'border-slate-800 hover:border-slate-700 shadow-xl'
               }`}
             >
@@ -195,21 +255,117 @@ const ProcessedPhotosGrid = ({
                   </div>
                 )}
 
-                {/* 3. FAILED STATE */}
+                {/* 3. ENHANCED FAILED STATE */}
                 {isFailed && (
-                  <div className="absolute inset-0 bg-rose-950/60 p-4 flex flex-col items-center justify-center text-center text-xs text-rose-200 z-20">
-                    <AlertTriangle size={28} className="text-rose-400 mb-2" />
-                    <p className="font-bold text-white mb-1">Processing Failed</p>
-                    <p className="text-[10px] text-rose-300/80 mb-3 line-clamp-2">
-                      {photo.error || 'Could not detect face.'}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(photo.id)}
-                      className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-[11px] font-bold transition-colors"
-                    >
-                      Dismiss
-                    </button>
+                  <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md p-3.5 flex flex-col justify-between text-left text-xs z-20 overflow-y-auto">
+                    {/* Header & Status */}
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="p-1 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
+                            <AlertTriangle size={15} />
+                          </div>
+                          <span className="font-bold text-white text-xs truncate">
+                            {errInfo.title}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800/60 shrink-0">
+                          {errInfo.badge}
+                        </span>
+                      </div>
+
+                      {/* Actionable Tip Callout */}
+                      <div className="bg-rose-950/40 border border-rose-900/60 rounded-xl p-2 text-[11px] text-rose-200/90 flex items-start gap-1.5 leading-tight">
+                        <Info size={13} className="text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold text-rose-300">Tip: </span>
+                          <span>{errInfo.tip}</span>
+                        </div>
+                      </div>
+
+                      {/* Collapsible Details */}
+                      <div className="pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleDetails(photo.id)}
+                          className="flex items-center justify-between w-full text-[10px] text-slate-400 hover:text-slate-200 py-1 transition-colors cursor-pointer"
+                        >
+                          <span className="font-medium">Technical Details</span>
+                          {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-1 p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1.5">
+                            <p className="text-[10px] font-mono text-slate-300 break-words max-h-16 overflow-y-auto select-all leading-tight">
+                              {photo.rawError || photo.error || 'No detailed trace available.'}
+                            </p>
+                            <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
+                              <span className="text-[9px] font-mono text-slate-500">
+                                Code: {photo.errorCode || 'UNKNOWN'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyDetails(photo)}
+                                className="flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                {copiedId === photo.id ? (
+                                  <>
+                                    <Check size={11} className="text-emerald-400" />
+                                    <span className="text-emerald-400 font-semibold">Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={11} />
+                                    <span>Copy details</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions: Retry, HD Cloud, Dismiss */}
+                    <div className="pt-2 space-y-1.5 border-t border-slate-800/80 mt-2">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {/* Local Fast Retry */}
+                        <button
+                          type="button"
+                          onClick={() => onRetry?.(photo.id, false)}
+                          className="flex items-center justify-center gap-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[11px] font-bold transition-all border border-slate-700 hover:border-slate-600 cursor-pointer shadow-sm"
+                          title="Retry processing with local AI engine"
+                        >
+                          <RefreshCw size={12} className="text-cyan-400" />
+                          <span>Retry</span>
+                        </button>
+
+                        {/* Secondary: Retry with HD Cloud */}
+                        <button
+                          type="button"
+                          onClick={() => onRetry?.(photo.id, true)}
+                          className="flex items-center justify-center gap-1 py-1.5 px-2 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900 hover:to-blue-900 text-cyan-300 rounded-xl text-[11px] font-bold transition-all border border-cyan-800/70 hover:border-cyan-600 cursor-pointer shadow-sm"
+                          title="Retry using high-precision cloud AI engine"
+                        >
+                          <Sparkles size={12} className="text-cyan-400" />
+                          <span>HD Cloud</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-0.5">
+                        <span className="text-[9px] text-slate-500 flex items-center gap-1">
+                          <UploadCloud size={10} className="text-slate-500" />
+                          Sends photo to cloud AI
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onDelete(photo.id)}
+                          className="text-[10px] text-slate-400 hover:text-rose-400 transition-colors font-medium cursor-pointer"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 

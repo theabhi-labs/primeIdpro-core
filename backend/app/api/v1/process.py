@@ -307,17 +307,7 @@ async def get_engine_status():
     
     has_cloud_config = bool(token or custom_endpoint) and rmbg_enabled
     offline_ready = is_model_loaded()
-    
-    # Calculate download progress
-    download_progress = 0.0
-    if not offline_ready:
-        model_path = os.path.expanduser("~/.u2net/u2net_human_seg.onnx")
-        if os.path.exists(model_path):
-            current_size = os.path.getsize(model_path)
-            expected_size = 175997641 # ~176 MB
-            download_progress = min(99.0, (current_size / expected_size) * 100)
-    else:
-        download_progress = 100.0
+    download_progress = 100.0 if offline_ready else 0.0
         
     return {
         "success": True,

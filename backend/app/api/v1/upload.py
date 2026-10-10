@@ -18,7 +18,8 @@ async def upload_single(
     file: UploadFile = File(...),
     country_code: str = Form("india"),
     bg_color: str = Form("white"),
-    restore_vintage: bool = Form(False)
+    restore_vintage: bool = Form(False),
+    allow_cloud: bool = Form(False),
 ):
     image_id = str(uuid.uuid4()).replace("-", "")[:24]
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
@@ -35,6 +36,7 @@ async def upload_single(
         "filename": file.filename,
         "uploaded_at": datetime.now().isoformat(),
         "is_vintage_restored": restore_vintage,
+        "allow_cloud": allow_cloud,
     }
     processing_status[image_id] = {"status": "pending", "progress": 0}
 
@@ -49,7 +51,8 @@ async def upload_single(
             bg_color,
             restore_vintage=restore_vintage,
             face_cascade=face_cascade,
-            alt_cascade=alt_cascade
+            alt_cascade=alt_cascade,
+            allow_cloud=allow_cloud,
         )
     )
 
@@ -60,7 +63,8 @@ async def upload_single(
             "filename": file.filename,
             "bg_color": bg_color,
             "restore_vintage": restore_vintage,
-            "message": f"Processing started (vintage_restore={restore_vintage}). Use /status/{{image_id}} to check progress."
+            "allow_cloud": allow_cloud,
+            "message": f"Processing started (vintage_restore={restore_vintage}, allow_cloud={allow_cloud}). Use /status/{{image_id}} to check progress."
         }
     }
 
@@ -71,7 +75,8 @@ async def upload_batch(
     files: List[UploadFile] = File(...),
     country_code: str = Form("india"),
     bg_color: str = Form("white"),
-    restore_vintage: bool = Form(False)
+    restore_vintage: bool = Form(False),
+    allow_cloud: bool = Form(False),
 ):
     results = []
     face_cascade = getattr(request.app.state, "face_cascade", None)
@@ -93,6 +98,7 @@ async def upload_batch(
             "filename": file.filename,
             "uploaded_at": datetime.now().isoformat(),
             "is_vintage_restored": restore_vintage,
+            "allow_cloud": allow_cloud,
         }
         processing_status[image_id] = {"status": "pending", "progress": 0}
 
@@ -103,7 +109,8 @@ async def upload_batch(
                 bg_color,
                 restore_vintage=restore_vintage,
                 face_cascade=face_cascade,
-                alt_cascade=alt_cascade
+                alt_cascade=alt_cascade,
+                allow_cloud=allow_cloud,
             )
         )
         results.append({
@@ -111,10 +118,11 @@ async def upload_batch(
             "filename": file.filename,
             "bg_color": bg_color,
             "restore_vintage": restore_vintage,
+            "allow_cloud": allow_cloud,
         })
 
     return {
         "success": True,
         "data": results,
-        "message": f"{len(results)} images queued for processing (vintage_restore={restore_vintage})."
+        "message": f"{len(results)} images queued for processing (vintage_restore={restore_vintage}, allow_cloud={allow_cloud})."
     }

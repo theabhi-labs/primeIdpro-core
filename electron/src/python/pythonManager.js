@@ -59,7 +59,7 @@ class PythonManager {
                 this.process = spawn(spawnCmd, spawnArgs, {
                     cwd: spawnCwd,
                     detached: false,
-                    windowsHide: true,
+                    windowsHide: false,
                     stdio: "pipe",
                     env: {
                         ...process.env,
@@ -90,12 +90,7 @@ class PythonManager {
 
                 logger.info("WAITING_FOR_BACKEND_HEALTH", { url: config.LOCAL_HEALTH_URL });
 
-                await waitOn({
-                    resources: [`http-get://${config.PYTHON_HOST}:${config.PYTHON_PORT}/health`],
-                    timeout: 45000,
-                    interval: 1000,
-                    validateStatus: (status) => status === 200
-                });
+                await this.pollHealth(45000, 500);
 
                 this.isRunning = true;
                 logger.info("PYTHON_BACKEND_READY");
@@ -111,6 +106,35 @@ class PythonManager {
         }
 
         throw new Error("Failed to start Python backend after multiple attempts");
+    }
+
+    async pollHealth(timeoutMs = 45000, intervalMs = 500) {
+        const startTime = Date.now();
+        const healthUrl = `http://${config.PYTHON_HOST}:${config.PYTHON_PORT}/health`;
+        let lastError = null;
+
+        while (Date.now() - startTime < timeoutMs) {
+            if (this.process && this.process.exitCode !== null) {
+                throw new Error(`Python process exited prematurely with code ${this.process.exitCode}`);
+            }
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const res = await fetch(healthUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (res.status === 200) {
+                    return true;
+                }
+            } catch (err) {
+                lastError = err;
+            }
+
+            await new Promise(r => setTimeout(r, intervalMs));
+        }
+
+        throw new Error(`Health check timed out after ${timeoutMs}ms (${lastError?.message || 'Connection refused'})`);
     }
 
     stopBackend() {

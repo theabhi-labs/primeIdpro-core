@@ -1,9 +1,14 @@
 import os
-# --- CPU Optimization for Low-End Laptops ---
-os.environ["OMP_NUM_THREADS"] = "2"        # Limit AI to 2 CPU threads (Prevents 100% CPU lockup)
+
+# --- High-Performance Multithreading for Local CPU AI Inference ---
+cpu_count = os.cpu_count() or 4
+optimal_threads = str(min(8, max(4, cpu_count // 2 if cpu_count > 4 else cpu_count)))
+os.environ.setdefault("OMP_NUM_THREADS", optimal_threads)
+os.environ.setdefault("OPENBLAS_NUM_THREADS", optimal_threads)
+os.environ.setdefault("MKL_NUM_THREADS", optimal_threads)
 os.environ["OMP_WAIT_POLICY"] = "PASSIVE"  # Free up CPU immediately when idle
-os.environ["ORT_TENSORRT_MAX_WORKSPACE_SIZE"] = "1073741824" # 1GB RAM Limit for ONNX
-# --------------------------------------------
+os.environ["ORT_TENSORRT_MAX_WORKSPACE_SIZE"] = "1073741824"  # 1GB RAM Limit for ONNX
+# ------------------------------------------------------------------
 import logging
 from contextlib import asynccontextmanager
 
@@ -19,6 +24,7 @@ from app.core.state import uploaded_images, processing_status
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.exceptions import register_exception_handlers
 from app.api.v1 import api_v1_router
+from app.services.background.remover import check_bg_engine, preload_models
 
 # ========== IMAGE CODECS (HEIC / AVIF / WEBP SUPPORT) ==========
 try:
@@ -46,35 +52,42 @@ logger = logging.getLogger("primeidpro")
 async def lifespan(app: FastAPI):
     logger.info("Server starting...")
 
-    # Load OpenCV Haar Cascades
+    # Load OpenCV Haar Cascades with Windows Unicode path safety
     primary_cascade, alt_cascade = load_cascade_classifiers()
     app.state.face_cascade = primary_cascade
     app.state.face_cascade_alt = alt_cascade
 
     if app.state.face_cascade.empty():
-        logger.warning("Primary cascade not found, face detection will be degraded")
+        logger.warning("Primary cascade not found, face detection will rely on MediaPipe")
     else:
-        logger.info("Face cascades loaded")
-
-    # MediaPipe FaceMesh instantiation removed to prevent concurrent state sharing
+        logger.info("Face cascades loaded successfully")
 
     # Connect to MongoDB
     mongo_db = await db.connect()
     app.state.mongo_db = mongo_db
     app.state.mongo_client = db.client
 
-    # (V2 related generation job recovery removed)
-
-    # Preload AI models in background to eliminate 1st photo delay
+    # Background Engine Startup Self-Check & Model Preloading
     import asyncio
-    from app.services.background.remover import preload_models
-    asyncio.create_task(asyncio.to_thread(preload_models))
+
+    def _startup_bg_check():
+        try:
+            diag = check_bg_engine()
+            logger.info(
+                f"[BG Engine] Startup self-check: status={diag.get('status')} | "
+                f"mode={diag.get('quality_mode')} | "
+                f"models={diag.get('active_model_chain')} | "
+                f"dummy_latency={diag.get('dummy_test', {}).get('latency_ms')}ms"
+            )
+        except Exception as e:
+            logger.warning(f"[BG Engine] Startup self-check exception: {e}")
+        preload_models()
+
+    asyncio.create_task(asyncio.to_thread(_startup_bg_check))
 
     yield
 
     # Clean shutdown
-    # FaceMesh cleanup removed (no longer globally instantiated)
-
     await db.disconnect()
     logger.info("Server shutting down")
 
@@ -110,10 +123,6 @@ app.mount("/api/v1/processed", StaticFiles(directory=PROCESSED_DIR), name="api_p
 app.include_router(api_v1_router, prefix="/api/v1")
 
 
-# Prime ID Pro v3.2.0 with Universal Card Studio & Credit Wallet
-
-
-
 # ========== ROOT & HEALTH CHECK ==========
 @app.get("/health")
 async def health():
@@ -127,6 +136,12 @@ async def health():
         "mongodb_connected": mongo_db is not None,
     }
 
+
+@app.get("/health/bg")
+@app.get("/api/v1/health/bg")
+async def health_bg():
+    """Returns background engine diagnostics, available models, onnxruntime status, and latency."""
+    return check_bg_engine()
 
 
 @app.get("/")

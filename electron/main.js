@@ -37,7 +37,15 @@ async function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false, // Isolated preload bridge
-            devTools: false // DevTools strictly disabled
+            devTools: true // DevTools console enabled
+        }
+    });
+
+    // F12 or Ctrl+Shift+I to toggle DevTools / Console terminal
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+            mainWindow.webContents.toggleDevTools();
+            event.preventDefault();
         }
     });
 

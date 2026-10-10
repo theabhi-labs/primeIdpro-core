@@ -240,7 +240,7 @@ def connect_online_account(account_id: str, license_key: str) -> Dict[str, Any]:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json", "User-Agent": "PrimeIDPro-Desktop/1.0.0"},
         )
-        with urllib.request.urlopen(req, timeout=12) as res:
+        with urllib.request.urlopen(req, timeout=35) as res:
             res_body = res.read().decode("utf-8")
             parsed = json.loads(res_body)
             if parsed.get("success"):

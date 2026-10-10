@@ -2,10 +2,27 @@ import os
 from typing import List, Union
 from pydantic_settings import BaseSettings
 
-# Absolute paths based on app directory
-APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UPLOAD_DIR = os.path.join(APP_DIR, "uploads")
-PROCESSED_DIR = os.path.join(APP_DIR, "processed")
+# APP & BASE DIRS
+APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(APP_DIR)
+
+# Safe writable storage paths in user AppData (compatible with installed Desktop app)
+def _get_writable_app_data_dir() -> str:
+    if os.name == 'nt' and os.environ.get("LOCALAPPDATA"):
+        base = os.path.join(os.environ.get("LOCALAPPDATA"), "PrimeIdPro", "data")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".primeidpro", "data")
+    try:
+        os.makedirs(base, exist_ok=True)
+        return base
+    except Exception:
+        fallback = os.path.join(os.path.expanduser("~"), ".primeidpro", "data")
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+
+DATA_DIR = _get_writable_app_data_dir()
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+PROCESSED_DIR = os.path.join(DATA_DIR, "processed")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)

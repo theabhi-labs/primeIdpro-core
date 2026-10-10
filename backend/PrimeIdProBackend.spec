@@ -1,9 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_data_files
 
-datas = [('app/templates', 'app/templates'), ('app/metadata.json', 'app'), ('models', 'models'), ('.env', '.')]
+datas = [
+    ('app/templates', 'app/templates'),
+    ('app/metadata.json', 'app'),
+    ('models', 'models'),
+    ('.env', '.'),
+]
 binaries = []
 hiddenimports = [
     'motor.motor_asyncio', 'pymongo', 'beanie',
@@ -13,9 +18,12 @@ hiddenimports = [
     'uvicorn.lifespans', 'uvicorn.lifespans.auto',
     'app', 'app.main', 'app.core', 'app.core.config', 'app.core.database',
     'app.core.cascade', 'app.core.state', 'app.middleware', 'app.api',
-    'app.services', 'pydantic_settings'
+    'app.services', 'app.services.background', 'app.services.background.remover',
+    'app.services.background.validator', 'app.services.enhancement.matting_utils',
+    'pydantic_settings', 'onnxruntime', 'rembg'
 ]
 
+# Ensure onnxruntime DLLs, rembg data, cv2 cascades, and mediapipe models are collected
 for pkg in ['motor', 'pymongo', 'beanie', 'cv2', 'mediapipe', 'rembg', 'uvicorn', 'onnxruntime', 'fastapi', 'pydantic', 'pydantic_settings']:
     try:
         tmp_ret = collect_all(pkg)
@@ -24,6 +32,13 @@ for pkg in ['motor', 'pymongo', 'beanie', 'cv2', 'mediapipe', 'rembg', 'uvicorn'
         hiddenimports += tmp_ret[2]
     except Exception as e:
         pass
+
+# Explicit fallback collection for onnxruntime shared DLLs and binaries
+try:
+    binaries += collect_dynamic_libs('onnxruntime')
+    datas += collect_data_files('onnxruntime')
+except Exception:
+    pass
 
 a = Analysis(
     ['run_server.py'],
@@ -34,7 +49,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib', 'scipy', 'llvmlite', 'numba', 'sympy', 'fitz', 'pymupdf', 'pytesseract', 'tkinter', 'unittest'],
+    excludes=['matplotlib', 'sympy', 'fitz', 'pymupdf', 'pytesseract', 'tkinter', 'unittest'],
     noarchive=False,
     optimize=0,
 )
@@ -51,7 +66,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -67,4 +82,3 @@ coll = COLLECT(
     upx_exclude=[],
     name='PrimeIdProBackend',
 )
-

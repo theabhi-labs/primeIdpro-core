@@ -64,6 +64,7 @@ function App() {
     uploads,
     processedPhotos,
     uploadPhotos,
+    retryPhoto,
     removePhoto,
     updatePhotoUrl,
     clearAllPhotos,
@@ -110,6 +111,7 @@ function App() {
             if (isMounted) {
               setIsAuthenticated(true);
               setCheckingAuth(false);
+              return;
             }
           }
         }
@@ -1200,6 +1202,7 @@ function App() {
                 uploads={uploads}
                 onEdit={handleEditPhoto}
                 onDelete={(id) => removePhoto(id, true)}
+                onRetry={retryPhoto}
                 onClearAll={clearAllPhotos}
                 onSelectForCopy={handleSelectForCopy}
                 onSelectMultiple={handleSelectMultiple}

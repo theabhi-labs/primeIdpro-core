@@ -6,7 +6,7 @@ const { app } = require("electron");
 const isDev = process.env.NODE_ENV === "development" || !app?.isPackaged;
 const APP_ID = "com.primeidpro.desktop";
 const APP_NAME = "PrimeIdPro";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.3";
 
 // Directory resolution
 const getUserDataPath = () => {

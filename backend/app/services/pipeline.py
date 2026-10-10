@@ -21,6 +21,30 @@ from app.utils.color import validate_and_normalize_color
 logger = logging.getLogger("primeidpro.pipeline")
 
 
+def classify_error_code(err_str: str) -> str:
+    """Classify failure reason string into one of: IMAGE_UNREADABLE, NO_PERSON_FOUND, MASK_FAILED, TIMEOUT, UNKNOWN."""
+    err_lower = (err_str or "").lower()
+    if any(k in err_lower for k in [
+        "cannot identify", "unidentified", "corrupt", "could not be read", 
+        "truncated file", "dimensions too small", "syntaxerror", "decode", 
+        "unreadable", "invalid image", "cannot open", "image file is truncated", "image file truncated"
+    ]):
+        return "IMAGE_UNREADABLE"
+    if any(k in err_lower for k in [
+        "no face", "no person", "landmarks", "zero faces", "face detection", 
+        "not found", "face not detected", "no human", "cannot find face"
+    ]):
+        return "NO_PERSON_FOUND"
+    if any(k in err_lower for k in ["timeout", "timed out", "timedout"]):
+        return "TIMEOUT"
+    if any(k in err_lower for k in [
+        "background removal", "mask", "segmentation", "solid", "empty", 
+        "grabcut", "rembg", "u2net", "isnet", "birefnet", "matting", "all methods failed"
+    ]):
+        return "MASK_FAILED"
+    return "UNKNOWN"
+
+
 def detect_face_crop(
     image_path: str,
     output_path: str,
@@ -88,7 +112,8 @@ async def process_image_async(
     color_vibrance: float = 1.08,
     hair_depth: float = 1.30,
     face_cascade=None,
-    alt_cascade=None
+    alt_cascade=None,
+    allow_cloud: bool = False,
 ):
     """Full pipeline: bg removal -> precise crop + enhance + quality check"""
     try:
@@ -102,9 +127,12 @@ async def process_image_async(
 
         # Step 1: Remove background
         processing_status[image_id]["progress"] = 20
-        bg_ok = await asyncio.to_thread(remove_background_lightweight, original_path, nobg_path)
+        from app.services.background.remover import remove_background_with_reason
+        bg_ok, bg_reason = await asyncio.to_thread(
+            remove_background_with_reason, original_path, nobg_path, allow_cloud=allow_cloud
+        )
         if not bg_ok:
-            raise RuntimeError("Background removal failed")
+            raise RuntimeError(f"Background removal failed: {bg_reason}" if bg_reason else "Background removal failed")
 
         processing_status[image_id]["progress"] = 60
 
@@ -179,9 +207,15 @@ async def process_image_async(
             },
         }
     except Exception as e:
-
-        logger.error(f"Error processing {image_id}: {e}")
-        processing_status[image_id] = {"status": "failed", "progress": 0, "error": str(e)}
+        err_msg = str(e)
+        err_code = classify_error_code(err_msg)
+        logger.error(f"Error processing {image_id} [{err_code}]: {err_msg}")
+        processing_status[image_id] = {
+            "status": "failed",
+            "progress": 0,
+            "error": err_msg,
+            "error_code": err_code,
+        }
 
 
 async def recolor_image_logic(image_id: str, bg_color: str) -> dict:

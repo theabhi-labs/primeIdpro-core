@@ -282,7 +282,7 @@ class DeviceManager {
             osPlatform: process.platform
         };
 
-        const res = await apiClient.post("/devices/register", payload, { retries: 1 });
+        const res = await apiClient.post("/devices/register", payload, { retries: 2, timeout: 45000 });
 
         if (!res.success) {
             throw new Error(res.error || "Failed to authenticate with Central Platform");

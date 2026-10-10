@@ -16,7 +16,7 @@ def flatten_onto_bg(rgba_img: Image.Image, bg_color: str, target_size=(413, 531)
         rgba_img = rgba_img.resize(size, Image.Resampling.LANCZOS)
 
     rgba_np = np.array(rgba_img)
-    # Ensure edge decontamination
+    # Ensure edge color decontamination
     rgba_np = decontaminate_edges(rgba_np).astype(np.float32)
 
     rgb = rgba_np[:, :, :3]
@@ -31,23 +31,21 @@ def flatten_onto_bg(rgba_img: Image.Image, bg_color: str, target_size=(413, 531)
 def refine_edges_and_halo(img_np: np.ndarray) -> np.ndarray:
     """
     Studio-Grade Clean Edge Matting:
-    - Eliminates outer background fringe cleanly with smooth anti-aliased alpha.
+    - Eliminates outer background fringe cleanly with gentle alpha clamping.
     - Uses color decontamination to eliminate halos on dark hair and clothing.
-    - Preserves crisp, clean clothing shoulders without artificial dark outline strokes.
+    - Preserves crisp, clean clothing shoulders without artificial dark outline strokes or loss of fine hair.
     """
     if len(img_np.shape) != 3 or img_np.shape[2] != 4:
         return img_np
 
     # Apply Color Decontamination first
     decont_np = decontaminate_edges(img_np)
-    h, w = decont_np.shape[:2]
     rgb = decont_np[:, :, :3].copy()
     alpha = decont_np[:, :, 3].copy().astype(np.float32)
 
-    # Smooth Anti-Aliasing on Alpha Transition (eliminates jagged edges and cookie-cutter cuts)
-    alpha_clean = np.where(alpha < 6.0, 0.0, alpha)
-    alpha_clean = np.where(alpha_clean > 248.0, 255.0, alpha_clean)
-    alpha_clean = cv2.GaussianBlur(alpha_clean, (3, 3), 0.35)
+    # Gentle alpha boundary cleanup preserving fine wisps & soft gradients
+    alpha_clean = np.where(alpha < 4.0, 0.0, alpha)
+    alpha_clean = np.where(alpha_clean > 251.0, 255.0, alpha_clean)
     alpha_final = np.clip(alpha_clean, 0, 255).astype(np.uint8)
 
     return np.dstack([rgb, alpha_final])
@@ -275,6 +273,7 @@ def restore_and_enhance_vintage_photo(
     if color_vibrance > 1.0:
         hsv = cv2.cvtColor(bgr_restored, cv2.COLOR_BGR2HSV).astype(np.float32)
         sat_boost = max(1.0, min(1.20, float(color_vibrance)))
+        s_chan = hsv[:, ...]
         s_chan = hsv[:, :, 1]
         vib_mask = mask & (hair_weight < 0.35)
         hsv[:, :, 1] = np.where(vib_mask, np.clip(s_chan * sat_boost, 0, 255), s_chan)

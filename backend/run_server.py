@@ -4,10 +4,22 @@ import multiprocessing
 
 multiprocessing.freeze_support()
 
+# Safe stream wrapper for frozen execution
+class _SafeStream:
+    def write(self, s): pass
+    def flush(self): pass
+
+if sys.stdout is None:
+    sys.stdout = _SafeStream()
+if sys.stderr is None:
+    sys.stderr = _SafeStream()
+
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(line_buffering=True)
-        sys.stderr.reconfigure(line_buffering=True)
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(line_buffering=True)
     except Exception:
         pass
 

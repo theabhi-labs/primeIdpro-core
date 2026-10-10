@@ -31,8 +31,10 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
             password: password.trim(),
             deviceName: "Front Counter PC"
           });
-          if (bindRes?.isBound || bindRes?.status === 'ACTIVE') {
+          if (bindRes?.success || bindRes?.device?.isBound || bindRes?.device?.status === 'ACTIVE' || bindRes?.isBound || bindRes?.status === 'ACTIVE') {
             loginSuccess = true;
+          } else if (bindRes?.error) {
+            errorDetail = bindRes.error;
           }
         } catch (ipcErr) {
           console.warn("[FirstTimeSetup] Electron IPC connect fallback:", ipcErr);
@@ -42,7 +44,7 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
 
       // 2. Authenticate with local Python backend (with retry if backend is still booting)
       let attempts = 0;
-      while (attempts < 5 && !loginSuccess) {
+      while (attempts < 8 && !loginSuccess) {
         try {
           const res = await api.post('/auth/login', { email: email.trim(), password: password.trim() });
           if (res.data?.success) {
@@ -54,10 +56,10 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
           }
         } catch (apiErr) {
           errorDetail = apiErr.response?.data?.detail || apiErr.response?.data?.message || apiErr.message;
-          // If connection refused (backend booting), wait 1 second and retry
-          if (!apiErr.response && attempts < 4) {
+          // If connection refused (backend booting), wait 1.5 second and retry
+          if (!apiErr.response && attempts < 7) {
             attempts++;
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 1500));
           } else {
             break;
           }
@@ -146,7 +148,7 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
           <button
             type="submit"
             disabled={loading || syncing}
-            className="w-full mt-2 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-cyan-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full mt-2 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-cyan-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
           >
             {loading ? (
               <>
@@ -164,6 +166,25 @@ const FirstTimeSetup = ({ onLoginSuccess }) => {
                 <span>Secure Login & Setup</span>
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                if (window.primeIdPro?.device?.bind) {
+                  await window.primeIdPro.device.bind({
+                    centerId: "LOCAL_OFFLINE_CENTER",
+                    deviceId: "PIP-DESK-LOCAL",
+                    credential: "local_offline_token"
+                  });
+                }
+              } catch (_) {}
+              onLoginSuccess();
+            }}
+            className="w-full py-2.5 bg-slate-800/60 hover:bg-slate-700/80 text-slate-300 hover:text-cyan-400 font-bold rounded-xl border border-slate-700/60 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs mt-2"
+          >
+            <span>⚡ Continue in Offline Mode (Use Locally)</span>
           </button>
         </form>
 

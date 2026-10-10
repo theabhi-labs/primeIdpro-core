@@ -114,13 +114,14 @@ export const withRetry = async (fn, { retries = 2, baseDelayMs = 800 } = {}) => 
 // ============================================
 
 // Upload single image
-export const uploadImage = async (file, countryCode = 'india', bgColor = 'white', restoreVintage = false) => {
-    console.log(` Uploading single file: ${file.name} (${file.size} bytes) for country: ${countryCode} (vintage_restore=${restoreVintage})`);
+export const uploadImage = async (file, countryCode = 'india', bgColor = 'white', restoreVintage = false, allowCloud = false) => {
+    console.log(` Uploading single file: ${file.name} (${file.size} bytes) for country: ${countryCode} (vintage_restore=${restoreVintage}, allow_cloud=${allowCloud})`);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('country_code', countryCode);
     formData.append('bg_color', bgColor);
     formData.append('restore_vintage', restoreVintage ? 'true' : 'false');
+    formData.append('allow_cloud', allowCloud ? 'true' : 'false');
 
     const response = await api.post('/upload/single', formData, {
         headers: {
@@ -133,8 +134,8 @@ export const uploadImage = async (file, countryCode = 'india', bgColor = 'white'
 };
 
 // Upload multiple images
-export const uploadBatch = async (files, countryCode = 'india', bgColor = 'white', restoreVintage = false) => {
-    console.log(` Uploading batch of ${files.length} files for country: ${countryCode} (vintage_restore=${restoreVintage})`);
+export const uploadBatch = async (files, countryCode = 'india', bgColor = 'white', restoreVintage = false, allowCloud = false) => {
+    console.log(` Uploading batch of ${files.length} files for country: ${countryCode} (vintage_restore=${restoreVintage}, allow_cloud=${allowCloud})`);
     const formData = new FormData();
     files.forEach(file => {
         formData.append('files', file);
@@ -142,6 +143,7 @@ export const uploadBatch = async (files, countryCode = 'india', bgColor = 'white
     formData.append('country_code', countryCode);
     formData.append('bg_color', bgColor);
     formData.append('restore_vintage', restoreVintage ? 'true' : 'false');
+    formData.append('allow_cloud', allowCloud ? 'true' : 'false');
 
     const response = await api.post('/upload/batch', formData, {
         headers: {
